@@ -15,7 +15,7 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 2. **Attributes** — health / stamina / essence  
 3. **Characters** — `CharacterBase` foundation  
 4. Tags (covered in Core)  
-5. **Combat** (primitives) → later: Interaction → Items/Equipment → StatusEffects → Abilities/Aspects → AI → Progression → Echoes/Memories → Dialogue/Story/Quests → Nightmares → Save → UI → World/Content  
+5. **Combat** (primitives) → **Interaction** (foundation) → later: Items/Equipment → StatusEffects → Abilities/Aspects → AI → Progression → Echoes/Memories → Dialogue/Story/Quests → Nightmares → Save → UI → World/Content  
 
 ## Cross-cutting UE → Unity mappings
 
@@ -126,9 +126,16 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 ### Interaction
 | | |
 |--|--|
-| **UE** | `UShadowSlaveInteractionComponent`, interactable actors/interfaces, pickups |
-| **Purpose** | Trace/focus interactables; doors, switches, NPCs, containers |
-| **Unity** | Folder stub — port after Characters |
+| **UE** | `UShadowSlaveInteractionComponent`, `IShadowSlaveInteractableInterface`, `FShadowSlaveInteractionResult`, `AShadowSlaveInteractableActor`, concrete door/switch/NPC/container/pickup |
+| **Purpose** | Focus a candidate interactable and execute polymorphic Interact; prompt/priority for UI and future ranking |
+| **Ownership** | `InteractionComponent` on the interactor owns current target + primary event bus. `InteractableBehaviour` is an optional target-side helper implementing `IInteractable` (no second OnInteracted bus) |
+| **Data** | `InteractionResult` (Success, FailureReason, InteractionId, optional `Dictionary<string,string>` Metadata) |
+| **Runtime / execution contract** | Explicit `SetCurrentInteractable` / `ClearCurrentInteractable` (detection deferred). `TryInteract`: (1) no target → false, no event; (2) invalid/lost target → clear, false, no event; (3) `!CanInteract(owner)` → false, no event, Interact not called; (4) `Interact(owner)`; (5) `OnInteracted` always after Interact; (6) return `result.Success`. Owner is this component's `gameObject` |
+| **Events** | `OnInteractionTargetChanged(new, old)` only on actual GameObject reference change (null→null / A→A no fire). `OnInteracted(owner, targetGo, result)` only after Interact is called |
+| **Detection** | Deferred — optional `SetInteractionDetectionEnabled` / `IsInteractionDetectionEnabled` flag only; **no** Physics, traces, or Update polling |
+| **Dependencies** | None on Combat / Attributes / Characters. Same `ShadowSlave.Runtime` asmdef |
+| **Unity** | `IInteractable`, `InteractionResult`, `InteractionComponent`, `InteractableBehaviour` |
+| **Deferred concretes** | Door / Switch / NPC / Container / Pickup / prompt UI / physics focus / priority ranking among overlaps |
 
 ### Items / Equipment / Memories / Echoes
 | | |
