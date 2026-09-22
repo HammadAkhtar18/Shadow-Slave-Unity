@@ -15,7 +15,7 @@ Assets/ShadowSlave/
   Core/           Gameplay tags, logging
   Attributes/     Health / Stamina / Essence
   Characters/     CharacterBase foundation
-  Combat/         DamageInfo (foundation)
+  Combat/         Combat primitives (types, DamageInfo, IDamageable, CombatComponent, Dummy)
   Tests/EditMode/ Unity Test Framework Edit Mode tests
   …               Folder stubs for remaining systems
 ```
@@ -33,4 +33,4 @@ Unity Editor is **not** installed in the agent environment that authored this fo
 
 ## Branching
 
-Foundation work lives on `unity-foundation`. Do not push unless explicitly requested.
+Foundation: `unity-foundation`. Combat primitives: `unity-combat-foundation`. Do not push unless explicitly requested.

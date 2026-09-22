@@ -4,7 +4,8 @@ using UnityEngine;
 namespace ShadowSlave.Combat
 {
     /// <summary>
-    /// Payload for a damage event. Mirrors UE FShadowSlaveDamageInfo (foundation subset).
+    /// Payload for a damage event. Mirrors UE FShadowSlaveDamageInfo field-for-field.
+    /// UE has no damage-type field; none is added here.
     /// </summary>
     [Serializable]
     public struct DamageInfo

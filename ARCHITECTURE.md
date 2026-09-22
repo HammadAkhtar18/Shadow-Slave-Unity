@@ -15,7 +15,7 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 2. **Attributes** — health / stamina / essence  
 3. **Characters** — `CharacterBase` foundation  
 4. Tags (covered in Core)  
-5. Later: Combat → Interaction → Items/Equipment → StatusEffects → Abilities/Aspects → AI → Progression → Echoes/Memories → Dialogue/Story/Quests → Nightmares → Save → UI → World/Content  
+5. **Combat** (primitives) → later: Interaction → Items/Equipment → StatusEffects → Abilities/Aspects → AI → Progression → Echoes/Memories → Dialogue/Story/Quests → Nightmares → Save → UI → World/Content  
 
 ## Cross-cutting UE → Unity mappings
 
@@ -70,15 +70,58 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 | **Events** | Health changed, damaged, died, gait changed |
 | **Dependencies** | Attributes; later Combat / Equipment / StatusEffects |
 | **Unity** | `CharacterBase`, `ShadowSlaveGait` |
-| **Notes** | Combat/Equipment/StatusEffect accessors are null-safe stubs until those systems are ported |
+| **Notes** | Implements `IDamageable`. `CombatComponent` resolved when present; Equipment/StatusEffect still null stubs |
 
 ### Combat
 | | |
 |--|--|
-| **UE** | `UShadowSlaveCombatComponent`, `FShadowSlaveDamageInfo`, damageable interface, hit-window notifies |
-| **Purpose** | Combat state, melee traces, dodge, damage routing |
-| **Unity (foundation)** | `DamageInfo` only |
-| **Notes** | Full combat component deferred; attributes already accept `DamageInfo` |
+| **UE** | `UShadowSlaveCombatComponent`, `FShadowSlaveDamageInfo` / `FShadowSlaveAttackData`, `IShadowSlaveDamageableInterface`, `AShadowSlaveCombatDummy`, hit-window anim notify |
+| **Purpose** | Combat state machine, attack lifecycle, hit tracking, damage routing (melee traces / dodge deferred on Unity) |
+| **Data** | `ECombatState`, `EAttackType`, `AttackData`, `DamageInfo` (UE has no damage-type field; none added) |
+| **Runtime** | Start/cancel attack → Attacking → hit window → Recovering → Neutral; `TryApplyHit` applies damage via `IDamageable` or `AttributeComponent` |
+| **Events** | `OnCombatStateChanged`, `OnAttackExecuted`/`Started`/`Ended`, `OnTargetHit`/`OnHitLanded`, `OnDamageDealt`, `OnDamageReceived` |
+| **Dependencies** | Attributes (health reduction); Characters implement `IDamageable` |
+| **Unity** | `CombatTypes`, `DamageInfo`, `IDamageable`, `CombatComponent`, `DamageCalculator`, `CombatDummy` |
+| **Notes** | See behaviour notes below. Sphere sweeps, anim hit-window notifies, and full dodge movement are deferred |
+
+#### Combat behaviour notes (from UE5 inspection)
+
+- **Damage flow:** `CombatComponent` hit path → resolve `IDamageable.TakeDamage` on target (else `AttributeComponent.ApplyDamage`) → health clamp/death on attributes. `CharacterBase.TakeDamage` also notifies owner `CombatComponent.NotifyDamageReceived`.
+- **Damage types:** UE `FShadowSlaveDamageInfo` has **no** damage-type field. Unity `DamageInfo` matches that parity — no type id or enum until a later system needs it.
+- **Damage sources/causers:** `Attacker` and `DamageCauser` (`GameObject`, UE `TWeakObjectPtr<AActor>`). Attack instance id ties hits to one `ExecuteAttack` call.
+- **Combat events/delegates:** State changed; attack executed/started/ended; target hit; damage dealt; damage received. Dodge started/ended/rejected exist in UE — Unity dodge execution deferred (types retained).
+- **Attack state (`ECombatState`):** Neutral, Attacking, Recovering, Dodging, Stunned, Dead. Dead is terminal; Stunned interruptible into from any living state; attacks only from Neutral.
+- **Hit handling / hit windows:** UE opens window via `UAnimNotifyState_ShadowSlaveHitWindow` or timer fallback, then sphere-sweeps (`PerformMeleeTrace`). **Unity deferral:** no physics sweeps / anim notifies yet; `OpenHitWindow`/`CloseHitWindow` + coroutine fallback duration; external systems call `TryApplyHit` / `RegisterHit`.
+- **`IDamageable`:** Mirrors `IShadowSlaveDamageableInterface` (`TakeDamage`, `IsAlive`). Implemented by `CharacterBase` and `CombatDummy`.
+- **`CombatComponent` responsibilities:** State transitions (re-entrancy guard), light/heavy `AttackData`, attack instance ids, `MaxHitsPerTarget` hit map, damage routing, owner death → Dead. Does **not** require `CharacterBase` specifically.
+- **Cooldown/timing:** `HitWindowDuration` then `RecoveryDuration` (UE timers → Unity coroutines). No separate global attack cooldown beyond recovery/state gate.
+- **Relationship with `AttributeComponent`:** Combat deals damage amounts; attributes own health reduction, clamp, death. Owner alive checks use `IDamageable` or attributes. Stamina for dodge is UE-side; dodge spend deferred here.
+- **`CombatDummy` purpose:** Minimal damageable + attributes actor for prototype/hit validation without AI (UE `AShadowSlaveCombatDummy`).
+
+#### UE5 → Unity combat mapping
+
+| UE5 | Unity |
+|-----|-------|
+| `ECombatState` / `EAttackType` | Same enum names in `CombatTypes` |
+| `FShadowSlaveDamageInfo` | `DamageInfo` |
+| `FShadowSlaveAttackData` | `AttackData` (`AnimationClip?` instead of `UAnimMontage`) |
+| `IShadowSlaveDamageableInterface` | `IDamageable` (C# interface) |
+| `UShadowSlaveCombatComponent` | `CombatComponent` |
+| `AShadowSlaveCombatDummy` | `CombatDummy` |
+| `PerformMeleeTrace` sphere sweep | Deferred — use `TryApplyHit` |
+| `UAnimNotifyState_ShadowSlaveHitWindow` | Deferred |
+| `FTimerHandle` hit/recovery | Coroutines |
+| Dynamic multicast delegates | C# `event` / `Action<>` |
+| Full dodge (stamina, launch, montages) | Types only; execution deferred |
+
+#### Deliberate differences
+
+1. No montage / anim-notify hit window yet — timer/coroutine fallback opens the window; hits injected via `TryApplyHit`.
+2. No sphere sweep / physics traces in this phase.
+3. C# `IDamageable` instead of UE `UInterface`.
+4. `OnHitLanded` alias alongside `OnTargetHit` for clearer naming; both fire on successful apply.
+5. No damage-type field on `DamageInfo` — matches UE (deferred until a consumer exists).
+6. Friendly-fire tag check uses string `tag` equality to avoid `CompareTag` failures when TagManager lacks Player/Enemy.
 
 ### Interaction
 | | |

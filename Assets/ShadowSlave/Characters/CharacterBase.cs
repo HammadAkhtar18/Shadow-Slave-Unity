@@ -10,17 +10,18 @@ namespace ShadowSlave.Characters
     /// <summary>
     /// Foundation character base for player, companions, and enemies.
     /// Mirrors behavioural responsibilities of UE AShadowSlaveCharacterBase without requiring
-    /// Combat / Equipment / StatusEffect components yet (null-safe stubs for future port).
+    /// Equipment / StatusEffect components yet (null-safe stubs). Implements IDamageable; optional CombatComponent.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AttributeComponent))]
-    public class CharacterBase : MonoBehaviour
+    public class CharacterBase : MonoBehaviour, IDamageable
     {
         [SerializeField] private string characterId = string.Empty;
         [SerializeField] private float walkSpeed = 4.5f;
         [SerializeField] private float sprintSpeed = 7.5f;
 
         private AttributeComponent _attributeComponent;
+        private CombatComponent _combatComponent;
         private ShadowSlaveGait _currentGait = ShadowSlaveGait.Walk;
         private bool _isAlive = true;
         private bool _canMove = true;
@@ -45,8 +46,8 @@ namespace ShadowSlave.Characters
         public float WalkSpeed => walkSpeed;
         public float SprintSpeed => sprintSpeed;
 
-        /// <summary>Optional future combat component — null until Combat is ported.</summary>
-        public Component CombatComponent => null;
+        /// <summary>Combat component when present on the same GameObject; otherwise null.</summary>
+        public CombatComponent CombatComponent => _combatComponent;
 
         /// <summary>Optional future equipment component — null until Equipment is ported.</summary>
         public Component EquipmentComponent => null;
@@ -57,6 +58,7 @@ namespace ShadowSlave.Characters
         private void Awake()
         {
             _attributeComponent = GetComponent<AttributeComponent>();
+            _combatComponent = GetComponent<CombatComponent>();
             WireAttributeEvents();
         }
 
@@ -134,6 +136,16 @@ namespace ShadowSlave.Characters
             {
                 _lastDamageAttacker = damageInfo.Attacker;
                 OnDamaged(damageInfo);
+
+                if (_combatComponent == null)
+                {
+                    _combatComponent = GetComponent<CombatComponent>();
+                }
+
+                if (_combatComponent != null)
+                {
+                    _combatComponent.NotifyDamageReceived(damageInfo);
+                }
             }
 
             return actual;
@@ -162,6 +174,17 @@ namespace ShadowSlave.Characters
         {
             _isAlive = false;
             SetMovementControlSuppressed("Death", true);
+
+            if (_combatComponent == null)
+            {
+                _combatComponent = GetComponent<CombatComponent>();
+            }
+
+            if (_combatComponent != null)
+            {
+                _combatComponent.HandleOwnerDeath();
+            }
+
             OnCharacterDied?.Invoke(this, _lastDamageAttacker);
         }
 

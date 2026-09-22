@@ -1,4 +1,4 @@
-# Validation report — Unity foundation
+# Validation report — Unity foundation + combat primitives
 
 ## Environment
 
@@ -15,8 +15,8 @@
 1. Repository structure: `Assets/`, `Packages/`, `ProjectSettings/` present.
 2. `ProjectSettings/ProjectVersion.txt` records `m_EditorVersion: 6000.3.24f1`.
 3. Required `Assets/ShadowSlave/*` folders and assembly definitions exist.
-4. Foundation C# sources exist for Core, Attributes, Characters, Combat.
-5. Edit Mode test sources exist for GameplayTag, AttributeComponent, CharacterBase.
+4. Foundation C# sources exist for Core, Attributes, Characters, Combat primitives.
+5. Edit Mode test sources exist for GameplayTag, AttributeComponent, CharacterBase, Combat.
 6. Brace / parenthesis balance and basic C# token checks via Python (no Unity compile).
 7. UE5 reference at `/workspace/ShadowSlave` was read-only; not modified.
 
