@@ -50,6 +50,7 @@ require "Assets/ShadowSlave/Tests/EditMode/ProgressionTests.cs"
 require "ARCHITECTURE.md"
 require "README.md"
 require "VALIDATION.md"
+require "Docs/Canon/SoulCores.md"
 
 if grep -q "m_EditorVersion: 6000.3.24f1" ProjectSettings/ProjectVersion.txt; then
   echo "OK: Unity version 6000.3.24f1"

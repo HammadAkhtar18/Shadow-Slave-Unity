@@ -161,15 +161,15 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 ### Progression
 | | |
 |--|--|
-| **UE** | `UShadowSlaveProgressionComponent`, `EShadowSlaveCharacterRank` |
-| **Purpose** | Character progression rank ownership and advancement gates |
-| **Ownership** | Character Rank is owned by `ProgressionComponent`. `CharacterBase` requires and hosts `ProgressionComponent` on the same GameObject via `[RequireComponent(typeof(ProgressionComponent))]` |
-| **Data** | `ShadowSlaveCharacterRank` (`Unknown = 0`, `Dormant = 1`, `Awakened = 2`, `Ascended = 3`, `Transcendent = 4`, `Supreme = 5`, `Sacred = 6`, `Divine = 7`). Serialized on component, defaults to `Unknown` |
-| **Runtime** | `GetCharacterRank`, `HasKnownRank`, `SetCharacterRank`, `CanAdvanceRank`, `AdvanceRank`. No `Update()` / no tick |
-| **Events** | `OnCharacterRankChanged(newRank, oldRank)` fires on actual rank change; no event on same rank |
-| **Deliberate boundaries** | Character Rank is independent of future Aspect Rank. Progression has no automatic advancement. Save and UI integrations are deferred |
+| **UE** | `UShadowSlaveProgressionComponent`, `EShadowSlaveCharacterRank`, `FShadowSlaveSoulCoreState` |
+| **Purpose** | Character progression rank and soul core capacity ownership, advancement gates, and soul core tracking |
+| **Ownership** | Character Rank and Soul Core state are owned by `ProgressionComponent`. `CharacterBase` requires and hosts `ProgressionComponent` on the same GameObject via `[RequireComponent(typeof(ProgressionComponent))]` |
+| **Data** | `ShadowSlaveCharacterRank` (`Unknown = 0`, `Dormant = 1`, `Awakened = 2`, `Ascended = 3`, `Transcendent = 4`, `Supreme = 5`, `Sacred = 6`, `Divine = 7`, defaults to `Unknown`); `SoulCoreState` (`currentSoulCores = 1`, `maximumSoulCores = 1`). Serialized on component |
+| **Runtime** | Rank API (`GetCharacterRank`, `HasKnownRank`, `SetCharacterRank`, `CanAdvanceRank`, `AdvanceRank`); Soul Core API (`GetSoulCoreCount`, `GetMaximumSoulCores`/`GetMaxSoulCores`, `SetSoulCoreCount`, `SetMaximumSoulCores`/`SetMaxSoulCores`, `AddSoulCores`/`AddSoulCore`, `RemoveSoulCores`/`RemoveSoulCore`, `HasMultipleCores`, `IsMaxCoresReached`, `GetSoulCoreState`). Invariants: `0 <= CurrentSoulCores <= MaximumSoulCores`, `1 <= MaximumSoulCores`. No `Update()` / no tick |
+| **Events** | `OnCharacterRankChanged(newRank, oldRank)`, `OnSoulCoreCountChanged(newCount, oldCount)`, `OnMaxSoulCoresChanged(newMax, oldMax)`. Fires on actual changes; suppressed on same-value mutations. When decreasing maximum below current count, `OnMaxSoulCoresChanged` fires first, followed by `OnSoulCoreCountChanged` |
+| **Deliberate boundaries** | Character Rank (quality) and Soul Cores (quantity/class) are orthogonal progression axes. Decoupled from `AttributeComponent`: resource pools (Health, Stamina, Essence) remain strictly owned by `AttributeComponent`. Character Rank is independent of future Aspect Rank. Progression has no automatic advancement. Save, UI, and Aspect integrations are deferred |
 | **Dependencies** | None on Combat, Interaction, or Attributes. Same `ShadowSlave.Runtime` asmdef |
-| **Unity** | `ShadowSlaveCharacterRank`, `ProgressionComponent` |
+| **Unity** | `ShadowSlaveCharacterRank`, `SoulCoreState`, `ProgressionComponent` |
 
 ### Nightmares / Story / Dialogue / Quests (Gameplay)
 | | |

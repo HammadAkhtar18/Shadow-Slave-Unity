@@ -17,7 +17,7 @@ Assets/ShadowSlave/
   Characters/     CharacterBase foundation
   Combat/         Combat primitives (types, DamageInfo, IDamageable, CombatComponent, Dummy)
   Interaction/    Interaction foundation (IInteractable, InteractionResult, InteractionComponent)
-  Progression/    Character progression rank foundation (ProgressionTypes, ProgressionComponent)
+  Progression/    Character progression rank and soul core foundation (ProgressionTypes, ProgressionComponent)
   Tests/EditMode/ Unity Test Framework Edit Mode tests
   …               Folder stubs for remaining systems
 ```
