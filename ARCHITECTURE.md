@@ -144,12 +144,26 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 | **Purpose** | Instance inventories, equip modifiers into Attributes, collectible Memories/Echoes |
 | **Unity** | Folder stubs — definitions as `ScriptableObject` later |
 
-### StatusEffects / Abilities / Aspects
+### StatusEffects
 | | |
 |--|--|
-| **UE** | Status effect component + definitions; Aspect component/abilities/flaws (Abilities folder empty in UE) |
-| **Purpose** | Timed conditions; Aspect identity and abilities |
+| **UE** | Status effect component + definitions (Abilities folder empty in UE) |
+| **Purpose** | Timed conditions and modifiers |
 | **Unity** | Folder stubs |
+
+### Aspects
+| | |
+|--|--|
+| **UE** | `UShadowSlaveAspectComponent`, `UShadowSlaveAspectDefinition`, `UShadowSlaveAspectAbilityDefinition`, `UShadowSlaveFlawDefinition`, `EShadowSlaveAspectRank` |
+| **Purpose** | Static Aspect archetype content definitions, abilities, bound flaws, and runtime component binding |
+| **Ownership** | `AspectDefinition`, `AspectAbilityDefinition`, and `FlawDefinition` are static content assets (`ScriptableObject`). `AspectComponent` owns the runtime Aspect binding on a character |
+| **Classification** | `AspectRank` (`Unknown = 0`, `Dormant = 1`, `Awakened = 2`, `Ascended = 3`, `Transcendent = 4`, `Supreme = 5`, `Sacred = 6`, `Divine = 7`). **Completely independent from Character Rank** (e.g. Divine Aspect on a Dormant sleeper) |
+| **Data (Static)** | `AspectDefinition` (`AspectId`, `DisplayName`, `Description`, `AspectRank`, `AbilityDefinitions`, `FlawDefinition`, `Metadata`, `CanonProvenance`); `AspectAbilityDefinition` (`AbilityId`, `DisplayName`, `Description`, `RequiredCharacterRank`, `BaseEssenceCost`, `Metadata`, `CanonProvenance`); `FlawDefinition` (`FlawId`, `DisplayName`, `Description`, `Metadata`, `CanonProvenance`) |
+| **Runtime** | `AspectComponent`: `SetAspectDefinition(newDef)`, `GetAspectDefinition()`, `HasAspect()`, `GetAspectRank()`. Suppresses duplicate assignment; purely event-driven, no tick/polling |
+| **Events** | `OnAspectChanged(newAspectDef, oldAspectDef)`. Dispatched only when bound definition actually changes |
+| **Deliberate boundaries** | Aspect Rank is separate from Character Rank. Static definitions are strictly immutable content data, separate from runtime character state. `ProgressionComponent` owns Character Rank, Soul Cores, and Progression Metadata; `AttributeComponent` owns Health, Stamina, and Essence; `AspectComponent` owns runtime Aspect binding. Ability unlocking, runtime ability instances, essence consumption, and Flaw gameplay effects are deferred to later runtime phases |
+| **Dependencies** | Reads `ShadowSlaveCharacterRank` in `AspectAbilityDefinition` for rank prerequisite data parameter. Same `ShadowSlave.Runtime` asmdef |
+| **Unity** | `AspectRank`, `AspectMetadataEntry`, `AspectDefinition`, `AspectAbilityDefinition`, `FlawDefinition`, `AspectComponent` |
 
 ### AI
 | | |
