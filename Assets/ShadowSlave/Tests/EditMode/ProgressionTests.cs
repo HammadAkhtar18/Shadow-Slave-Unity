@@ -966,5 +966,101 @@ namespace ShadowSlave.Tests.EditMode
 
             Object.DestroyImmediate(testGo);
         }
+
+        /* --- Progression Attribute Integration Tests --- */
+
+        [Test]
+        public void GetAttributeComponent_WhenAttachedToSameGameObject_ReturnsAttributeComponent()
+        {
+            GameObject actor = new GameObject("AttributeOwnerActor");
+            try
+            {
+                AttributeComponent attrs = actor.AddComponent<AttributeComponent>();
+                ProgressionComponent prog = actor.AddComponent<ProgressionComponent>();
+
+                AttributeComponent found = prog.GetAttributeComponent();
+                Assert.IsNotNull(found);
+                Assert.AreSame(attrs, found);
+            }
+            finally
+            {
+                Object.DestroyImmediate(actor);
+            }
+        }
+
+        [Test]
+        public void GetAttributeComponent_WhenMissing_ReturnsNull()
+        {
+            // _progressionGo has ProgressionComponent but no AttributeComponent attached
+            AttributeComponent found = _progression.GetAttributeComponent();
+            Assert.IsNull(found);
+        }
+
+        [Test]
+        public void GetAttributeComponent_DoesNotCreateComponent()
+        {
+            GameObject actor = new GameObject("StandaloneProgressionActor");
+            try
+            {
+                ProgressionComponent prog = actor.AddComponent<ProgressionComponent>();
+
+                AttributeComponent found = prog.GetAttributeComponent();
+                Assert.IsNull(found);
+
+                AttributeComponent check = actor.GetComponent<AttributeComponent>();
+                Assert.IsNull(check);
+            }
+            finally
+            {
+                Object.DestroyImmediate(actor);
+            }
+        }
+
+        [Test]
+        public void GetAttributeComponent_DoesNotMutateAttributeState()
+        {
+            GameObject actor = new GameObject("AttributeStatePreservationActor");
+            try
+            {
+                AttributeComponent attrs = actor.AddComponent<AttributeComponent>();
+                ProgressionComponent prog = actor.AddComponent<ProgressionComponent>();
+                attrs.InitializeAttributes(AttributeInitConfig.Default);
+
+                Assert.AreEqual(100f, attrs.CurrentHealth, 0.001f);
+                Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
+                Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
+
+                AttributeComponent retrieved = prog.GetAttributeComponent();
+                Assert.AreSame(attrs, retrieved);
+
+                Assert.AreEqual(100f, attrs.CurrentHealth, 0.001f);
+                Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
+                Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
+            }
+            finally
+            {
+                Object.DestroyImmediate(actor);
+            }
+        }
+
+        [Test]
+        public void GetAttributeComponent_UsesOwningGameObject()
+        {
+            GameObject actorA = new GameObject("ActorA_ProgressionOnly");
+            GameObject actorB = new GameObject("ActorB_AttributeOnly");
+            try
+            {
+                ProgressionComponent progA = actorA.AddComponent<ProgressionComponent>();
+                AttributeComponent attrsB = actorB.AddComponent<AttributeComponent>();
+
+                // progA must only check actorA, ignoring attrsB on actorB
+                Assert.IsNull(progA.GetAttributeComponent());
+            }
+            finally
+            {
+                Object.DestroyImmediate(actorA);
+                Object.DestroyImmediate(actorB);
+            }
+        }
     }
 }

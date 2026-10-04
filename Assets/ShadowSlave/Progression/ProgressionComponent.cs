@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ShadowSlave.Attributes;
 using UnityEngine;
 
 namespace ShadowSlave.Progression
@@ -331,6 +332,18 @@ namespace ShadowSlave.Progression
             }
 
             return removed;
+        }
+
+        /* --- Attribute Integration --- */
+
+        /// <summary>
+        /// Safe helper to locate the owning GameObject's AttributeComponent without duplicate ownership.
+        /// Returns the AttributeComponent attached to the same GameObject, or null if missing.
+        /// Lookup only; does not cache, create, or mutate attribute state.
+        /// </summary>
+        public AttributeComponent GetAttributeComponent()
+        {
+            return GetComponent<AttributeComponent>();
         }
     }
 }
