@@ -2,6 +2,7 @@ using NUnit.Framework;
 using ShadowSlave.Attributes;
 using ShadowSlave.Characters;
 using ShadowSlave.Combat;
+using ShadowSlave.Progression;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -18,6 +19,7 @@ namespace ShadowSlave.Tests.EditMode
         {
             _go = new GameObject("CharacterTestActor");
             _attrs = _go.AddComponent<AttributeComponent>();
+            _go.AddComponent<ProgressionComponent>();
             _character = _go.AddComponent<CharacterBase>();
             _attrs.InitializeAttributes(AttributeInitConfig.Default);
             _character.CharacterId = "test_character";

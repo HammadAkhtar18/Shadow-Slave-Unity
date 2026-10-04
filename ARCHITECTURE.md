@@ -68,9 +68,9 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 | **Data** | Character id, walk/sprint speeds, suppression source set |
 | **Runtime** | Wire attribute events; sprint gated by alive/move/stamina; death suppresses movement |
 | **Events** | Health changed, damaged, died, gait changed |
-| **Dependencies** | Attributes; later Combat / Equipment / StatusEffects |
+| **Dependencies** | Attributes, Progression; later Combat / Equipment / StatusEffects |
 | **Unity** | `CharacterBase`, `ShadowSlaveGait` |
-| **Notes** | Implements `IDamageable`. `CombatComponent` resolved when present; Equipment/StatusEffect still null stubs |
+| **Notes** | Implements `IDamageable`. Requires `AttributeComponent` and `ProgressionComponent`. `CombatComponent` resolved when present; Equipment/StatusEffect still null stubs |
 
 ### Combat
 | | |
@@ -158,11 +158,24 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 | **Purpose** | Idle → Investigate → Chase → Attack → Recover flow for Nightmare creatures |
 | **Unity** | Folder stub — prefer Unity AI Navigation / custom state machine |
 
-### Progression / Nightmares / Story / Dialogue / Quests (Gameplay)
+### Progression
 | | |
 |--|--|
-| **UE** | Progression component; Nightmare subsystem + objectives; Story/Dialogue subsystems; Quest subsystem |
-| **Purpose** | Rank/soul cores; Nightmare session lifecycle; narrative and quest state |
+| **UE** | `UShadowSlaveProgressionComponent`, `EShadowSlaveCharacterRank` |
+| **Purpose** | Character progression rank ownership and advancement gates |
+| **Ownership** | Character Rank is owned by `ProgressionComponent`. `CharacterBase` requires and hosts `ProgressionComponent` on the same GameObject via `[RequireComponent(typeof(ProgressionComponent))]` |
+| **Data** | `ShadowSlaveCharacterRank` (`Unknown = 0`, `Dormant = 1`, `Awakened = 2`, `Ascended = 3`, `Transcendent = 4`, `Supreme = 5`, `Sacred = 6`, `Divine = 7`). Serialized on component, defaults to `Unknown` |
+| **Runtime** | `GetCharacterRank`, `HasKnownRank`, `SetCharacterRank`, `CanAdvanceRank`, `AdvanceRank`. No `Update()` / no tick |
+| **Events** | `OnCharacterRankChanged(newRank, oldRank)` fires on actual rank change; no event on same rank |
+| **Deliberate boundaries** | Character Rank is independent of future Aspect Rank. Progression has no automatic advancement. Save and UI integrations are deferred |
+| **Dependencies** | None on Combat, Interaction, or Attributes. Same `ShadowSlave.Runtime` asmdef |
+| **Unity** | `ShadowSlaveCharacterRank`, `ProgressionComponent` |
+
+### Nightmares / Story / Dialogue / Quests (Gameplay)
+| | |
+|--|--|
+| **UE** | Nightmare subsystem + objectives; Story/Dialogue subsystems; Quest subsystem |
+| **Purpose** | Nightmare session lifecycle; narrative and quest state |
 | **Unity** | Folder stubs — subsystems → managers/services |
 
 ### Save / UI / World / Content

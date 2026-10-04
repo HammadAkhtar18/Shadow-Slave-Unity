@@ -17,6 +17,7 @@ Assets/ShadowSlave/
   Characters/     CharacterBase foundation
   Combat/         Combat primitives (types, DamageInfo, IDamageable, CombatComponent, Dummy)
   Interaction/    Interaction foundation (IInteractable, InteractionResult, InteractionComponent)
+  Progression/    Character progression rank foundation (ProgressionTypes, ProgressionComponent)
   Tests/EditMode/ Unity Test Framework Edit Mode tests
   …               Folder stubs for remaining systems
 ```
@@ -34,4 +35,4 @@ Unity Editor is **not** installed in the agent environment that authored this fo
 
 ## Branching
 
-Foundation: `unity-foundation`. Combat: `unity-combat-foundation`. Interaction: `unity-interaction-foundation`. Do not push unless explicitly requested.
+Foundation: `unity-foundation`. Combat: `unity-combat-foundation`. Interaction: `unity-interaction-foundation`. Progression: `unity-progression-rank-foundation`. Do not push unless explicitly requested.

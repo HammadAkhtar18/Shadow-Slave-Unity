@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ShadowSlave.Attributes;
 using ShadowSlave.Combat;
 using ShadowSlave.Core;
+using ShadowSlave.Progression;
 using UnityEngine;
 
 namespace ShadowSlave.Characters
@@ -14,6 +15,7 @@ namespace ShadowSlave.Characters
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AttributeComponent))]
+    [RequireComponent(typeof(ProgressionComponent))]
     public class CharacterBase : MonoBehaviour, IDamageable
     {
         [SerializeField] private string characterId = string.Empty;
@@ -21,6 +23,7 @@ namespace ShadowSlave.Characters
         [SerializeField] private float sprintSpeed = 7.5f;
 
         private AttributeComponent _attributeComponent;
+        private ProgressionComponent _progressionComponent;
         private CombatComponent _combatComponent;
         private ShadowSlaveGait _currentGait = ShadowSlaveGait.Walk;
         private bool _isAlive = true;
@@ -40,6 +43,7 @@ namespace ShadowSlave.Characters
         }
 
         public AttributeComponent AttributeComponent => _attributeComponent;
+        public ProgressionComponent ProgressionComponent => _progressionComponent;
         public ShadowSlaveGait Gait => _currentGait;
         public bool IsSprinting => _currentGait == ShadowSlaveGait.Sprint;
         public bool IsMovementControlEnabled => _canMove;
@@ -58,6 +62,7 @@ namespace ShadowSlave.Characters
         private void Awake()
         {
             _attributeComponent = GetComponent<AttributeComponent>();
+            _progressionComponent = GetComponent<ProgressionComponent>();
             _combatComponent = GetComponent<CombatComponent>();
             WireAttributeEvents();
         }
