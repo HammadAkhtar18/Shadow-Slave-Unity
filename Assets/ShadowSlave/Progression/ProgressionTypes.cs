@@ -83,4 +83,47 @@ namespace ShadowSlave.Progression
             }
         }
     }
+
+    /// <summary>
+    /// Represents a serializable key-value pair for progression metadata.
+    /// Used for quest, story, and advancement tracking state.
+    /// </summary>
+    [Serializable]
+    public struct ProgressionMetadataEntry : IEquatable<ProgressionMetadataEntry>
+    {
+        [SerializeField]
+        private string key;
+
+        [SerializeField]
+        private string value;
+
+        public string Key => key;
+        public string Value => value;
+
+        public ProgressionMetadataEntry(string key, string value)
+        {
+            this.key = key;
+            this.value = value;
+        }
+
+        public bool Equals(ProgressionMetadataEntry other)
+        {
+            return string.Equals(key, other.key, StringComparison.Ordinal) &&
+                   string.Equals(value, other.value, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is ProgressionMetadataEntry other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return ((key != null ? StringComparer.Ordinal.GetHashCode(key) : 0) * 397) ^
+                       (value != null ? StringComparer.Ordinal.GetHashCode(value) : 0);
+            }
+        }
+    }
 }

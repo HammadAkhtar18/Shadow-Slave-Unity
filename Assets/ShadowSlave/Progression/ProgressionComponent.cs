@@ -1,13 +1,15 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ShadowSlave.Progression
 {
     /// <summary>
-    /// Owns the character's progression state: Nightmare Spell character rank and soul cores.
+    /// Owns the character's progression state: Nightmare Spell character rank, soul cores, and metadata.
     /// Does not tick or poll; state changes occur explicitly via method calls.
     /// Character rank and soul core capacity are independent progression axes.
     /// Resource storage (Health, Stamina, Essence) remains strictly within AttributeComponent.
+    /// Progression metadata stores arbitrary key-value tracking state for quest and story hooks.
     /// </summary>
     [DisallowMultipleComponent]
     public class ProgressionComponent : MonoBehaviour
@@ -19,6 +21,10 @@ namespace ShadowSlave.Progression
         [Header("Soul Cores")]
         [SerializeField]
         private SoulCoreState soulCoreState = new SoulCoreState(1, 1);
+
+        [Header("Metadata")]
+        [SerializeField]
+        private List<ProgressionMetadataEntry> progressionMetadata = new List<ProgressionMetadataEntry>();
 
         /// <summary>
         /// Fires when the character rank changes. Arguments are (newRank, oldRank).
@@ -225,6 +231,102 @@ namespace ShadowSlave.Progression
             int current = soulCoreState.CurrentSoulCores;
             int targetCount = (count >= current) ? 0 : current - count;
             return SetSoulCoreCount(targetCount);
+        }
+
+        /* --- Progression Metadata API --- */
+
+        /// <summary>
+        /// Sets arbitrary progression key-value metadata for quest and story hooks.
+        /// Inserts new keys or overwrites existing keys deterministically without firing events.
+        /// Null keys are safely ignored.
+        /// </summary>
+        public void SetProgressionMetadata(string key, string value)
+        {
+            if (key == null)
+            {
+                return;
+            }
+
+            string normalizedValue = value ?? string.Empty;
+            int targetIndex = -1;
+
+            for (int i = progressionMetadata.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(progressionMetadata[i].Key, key, StringComparison.Ordinal))
+                {
+                    if (targetIndex == -1)
+                    {
+                        targetIndex = i;
+                    }
+                    else
+                    {
+                        // Clean up duplicate entries to guarantee key uniqueness
+                        progressionMetadata.RemoveAt(i);
+                        if (targetIndex > i)
+                        {
+                            targetIndex--;
+                        }
+                    }
+                }
+            }
+
+            if (targetIndex >= 0)
+            {
+                progressionMetadata[targetIndex] = new ProgressionMetadataEntry(key, normalizedValue);
+            }
+            else
+            {
+                progressionMetadata.Add(new ProgressionMetadataEntry(key, normalizedValue));
+            }
+        }
+
+        /// <summary>
+        /// Retrieves progression key-value metadata.
+        /// Returns true and outputs the stored value if found; otherwise sets value to null and returns false.
+        /// </summary>
+        public bool GetProgressionMetadata(string key, out string value)
+        {
+            if (key == null)
+            {
+                value = null;
+                return false;
+            }
+
+            for (int i = 0; i < progressionMetadata.Count; i++)
+            {
+                if (string.Equals(progressionMetadata[i].Key, key, StringComparison.Ordinal))
+                {
+                    value = progressionMetadata[i].Value;
+                    return true;
+                }
+            }
+
+            value = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Removes progression key-value metadata.
+        /// Returns true if a key was found and removed; otherwise returns false.
+        /// </summary>
+        public bool RemoveProgressionMetadata(string key)
+        {
+            if (key == null)
+            {
+                return false;
+            }
+
+            bool removed = false;
+            for (int i = progressionMetadata.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(progressionMetadata[i].Key, key, StringComparison.Ordinal))
+                {
+                    progressionMetadata.RemoveAt(i);
+                    removed = true;
+                }
+            }
+
+            return removed;
         }
     }
 }

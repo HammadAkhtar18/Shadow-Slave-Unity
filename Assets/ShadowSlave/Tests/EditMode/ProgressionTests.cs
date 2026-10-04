@@ -765,5 +765,191 @@ namespace ShadowSlave.Tests.EditMode
 
             Object.DestroyImmediate(testGo);
         }
+
+        /* --- Progression Metadata Tests --- */
+
+        [Test]
+        public void ProgressionMetadata_DefaultState_IsEmpty()
+        {
+            Assert.IsFalse(_progression.GetProgressionMetadata("Quest.Stage", out string val1));
+            Assert.IsNull(val1);
+
+            Assert.IsFalse(_progression.GetProgressionMetadata("AnyKey", out string val2));
+            Assert.IsNull(val2);
+        }
+
+        [Test]
+        public void SetProgressionMetadata_ThenGet_ReturnsStoredValue()
+        {
+            _progression.SetProgressionMetadata("Test.Key", "Value");
+
+            bool found = _progression.GetProgressionMetadata("Test.Key", out string value);
+            Assert.IsTrue(found);
+            Assert.AreEqual("Value", value);
+        }
+
+        [Test]
+        public void SetProgressionMetadata_ExistingKey_OverwritesValue()
+        {
+            _progression.SetProgressionMetadata("Test.Key", "One");
+            bool found1 = _progression.GetProgressionMetadata("Test.Key", out string value1);
+            Assert.IsTrue(found1);
+            Assert.AreEqual("One", value1);
+
+            _progression.SetProgressionMetadata("Test.Key", "Two");
+            bool found2 = _progression.GetProgressionMetadata("Test.Key", out string value2);
+            Assert.IsTrue(found2);
+            Assert.AreEqual("Two", value2);
+        }
+
+        [Test]
+        public void GetProgressionMetadata_MissingKey_ReturnsFalseAndDefaultOutValue()
+        {
+            bool found = _progression.GetProgressionMetadata("NonExistent", out string value);
+            Assert.IsFalse(found);
+            Assert.IsNull(value);
+        }
+
+        [Test]
+        public void RemoveProgressionMetadata_ExistingKey_RemovesAndReturnsTrue()
+        {
+            _progression.SetProgressionMetadata("Story.Chapter", "1");
+            Assert.IsTrue(_progression.GetProgressionMetadata("Story.Chapter", out _));
+
+            bool removed = _progression.RemoveProgressionMetadata("Story.Chapter");
+            Assert.IsTrue(removed);
+
+            bool foundAfter = _progression.GetProgressionMetadata("Story.Chapter", out string value);
+            Assert.IsFalse(foundAfter);
+            Assert.IsNull(value);
+        }
+
+        [Test]
+        public void RemoveProgressionMetadata_MissingKey_ReturnsFalse()
+        {
+            bool removed = _progression.RemoveProgressionMetadata("Missing.Key");
+            Assert.IsFalse(removed);
+        }
+
+        [Test]
+        public void ProgressionMetadata_MultipleIndependentKeys()
+        {
+            _progression.SetProgressionMetadata("Key.A", "Alpha");
+            _progression.SetProgressionMetadata("Key.B", "Beta");
+            _progression.SetProgressionMetadata("Key.C", "Gamma");
+
+            Assert.IsTrue(_progression.GetProgressionMetadata("Key.A", out string valA));
+            Assert.IsTrue(_progression.GetProgressionMetadata("Key.B", out string valB));
+            Assert.IsTrue(_progression.GetProgressionMetadata("Key.C", out string valC));
+            Assert.AreEqual("Alpha", valA);
+            Assert.AreEqual("Beta", valB);
+            Assert.AreEqual("Gamma", valC);
+
+            bool removedA = _progression.RemoveProgressionMetadata("Key.A");
+            Assert.IsTrue(removedA);
+
+            Assert.IsFalse(_progression.GetProgressionMetadata("Key.A", out _));
+            Assert.IsTrue(_progression.GetProgressionMetadata("Key.B", out string valBAfter));
+            Assert.IsTrue(_progression.GetProgressionMetadata("Key.C", out string valCAfter));
+            Assert.AreEqual("Beta", valBAfter);
+            Assert.AreEqual("Gamma", valCAfter);
+        }
+
+        [Test]
+        public void ProgressionMetadata_NullAndEmptyKeys_HandledSafely()
+        {
+            // Null key should be safely rejected / no-op
+            _progression.SetProgressionMetadata(null, "Ignored");
+            Assert.IsFalse(_progression.GetProgressionMetadata(null, out string nullVal));
+            Assert.IsNull(nullVal);
+            Assert.IsFalse(_progression.RemoveProgressionMetadata(null));
+
+            // Empty key is valid string
+            _progression.SetProgressionMetadata("", "EmptyKeyValue");
+            Assert.IsTrue(_progression.GetProgressionMetadata("", out string emptyVal));
+            Assert.AreEqual("EmptyKeyValue", emptyVal);
+
+            Assert.IsTrue(_progression.RemoveProgressionMetadata(""));
+            Assert.IsFalse(_progression.GetProgressionMetadata("", out _));
+
+            // Null value normalized to empty string
+            _progression.SetProgressionMetadata("NullValKey", null);
+            Assert.IsTrue(_progression.GetProgressionMetadata("NullValKey", out string recoveredVal));
+            Assert.AreEqual(string.Empty, recoveredVal);
+        }
+
+        [Test]
+        public void ProgressionMetadata_SerializationInvariant_DeduplicatesOnSet()
+        {
+            // Verify entry struct
+            var entry1 = new ProgressionMetadataEntry("A", "1");
+            var entry2 = new ProgressionMetadataEntry("A", "1");
+            var entry3 = new ProgressionMetadataEntry("A", "2");
+            Assert.AreEqual(entry1, entry2);
+            Assert.AreNotEqual(entry1, entry3);
+            Assert.AreEqual("A", entry1.Key);
+            Assert.AreEqual("1", entry1.Value);
+
+            // Test component deduplication when setting
+            _progression.SetProgressionMetadata("DupKey", "Initial");
+            _progression.SetProgressionMetadata("DupKey", "Updated");
+
+            Assert.IsTrue(_progression.GetProgressionMetadata("DupKey", out string val));
+            Assert.AreEqual("Updated", val);
+
+            // Removing removes cleanly
+            Assert.IsTrue(_progression.RemoveProgressionMetadata("DupKey"));
+            Assert.IsFalse(_progression.GetProgressionMetadata("DupKey", out _));
+        }
+
+        [Test]
+        public void ProgressionMetadata_Operations_DoNotMutate_CharacterRank()
+        {
+            _progression.SetCharacterRank(ShadowSlaveCharacterRank.Ascended);
+            Assert.AreEqual(ShadowSlaveCharacterRank.Ascended, _progression.GetCharacterRank());
+
+            _progression.SetProgressionMetadata("Quest.Stage", "5");
+            _progression.GetProgressionMetadata("Quest.Stage", out _);
+            _progression.RemoveProgressionMetadata("Quest.Stage");
+
+            Assert.AreEqual(ShadowSlaveCharacterRank.Ascended, _progression.GetCharacterRank());
+        }
+
+        [Test]
+        public void ProgressionMetadata_Operations_DoNotMutate_SoulCores()
+        {
+            _progression.SetMaxSoulCores(4);
+            _progression.SetSoulCoreCount(3);
+
+            _progression.SetProgressionMetadata("Story.Flag", "Cleared");
+            _progression.GetProgressionMetadata("Story.Flag", out _);
+            _progression.RemoveProgressionMetadata("Story.Flag");
+
+            Assert.AreEqual(3, _progression.GetSoulCoreCount());
+            Assert.AreEqual(4, _progression.GetMaxSoulCores());
+        }
+
+        [Test]
+        public void ProgressionMetadata_Operations_DoNotMutate_Attributes()
+        {
+            GameObject testGo = new GameObject("MetadataAttributeTestActor");
+            AttributeComponent attrs = testGo.AddComponent<AttributeComponent>();
+            ProgressionComponent prog = testGo.AddComponent<ProgressionComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+
+            Assert.AreEqual(100f, attrs.CurrentHealth, 0.001f);
+            Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
+            Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
+
+            prog.SetProgressionMetadata("Encounter.Finished", "True");
+            prog.GetProgressionMetadata("Encounter.Finished", out _);
+            prog.RemoveProgressionMetadata("Encounter.Finished");
+
+            Assert.AreEqual(100f, attrs.CurrentHealth, 0.001f);
+            Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
+            Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
+
+            Object.DestroyImmediate(testGo);
+        }
     }
 }

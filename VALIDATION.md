@@ -1,4 +1,4 @@
-# Validation report — Unity foundation + combat + interaction + progression (rank + soul cores)
+# Validation report — Unity foundation + combat + interaction + progression (rank, soul cores, metadata)
 
 ## Environment
 
@@ -15,8 +15,8 @@
 1. Repository structure: `Assets/`, `Packages/`, `ProjectSettings/` present.
 2. `ProjectSettings/ProjectVersion.txt` records `m_EditorVersion: 6000.3.24f1`.
 3. Required `Assets/ShadowSlave/*` folders and assembly definitions exist.
-4. Foundation C# sources exist for Core, Attributes, Characters, Combat primitives, Interaction foundation, Progression foundation (Character Rank and Soul Cores).
-5. Edit Mode test sources exist for GameplayTag, AttributeComponent, CharacterBase, Combat, Interaction, Progression (Rank and Soul Core specifications).
+4. Foundation C# sources exist for Core, Attributes, Characters, Combat primitives, Interaction foundation, Progression foundation (Character Rank, Soul Cores, and Progression Metadata).
+5. Edit Mode test sources exist for GameplayTag, AttributeComponent, CharacterBase, Combat, Interaction, Progression (Rank, Soul Core, and Metadata specifications).
 6. Canon documentation exists at `Docs/Canon/SoulCores.md`.
 7. Brace / parenthesis balance and basic C# token checks via Python (no Unity compile).
 8. UE5 reference at `/workspace/ShadowSlave` was read-only; not modified.
