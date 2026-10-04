@@ -18,10 +18,7 @@ namespace ShadowSlave.Progression
 
         [Header("Soul Cores")]
         [SerializeField]
-        private int currentSoulCores = 1;
-
-        [SerializeField]
-        private int maximumSoulCores = 1;
+        private SoulCoreState soulCoreState = new SoulCoreState(1, 1);
 
         /// <summary>
         /// Fires when the character rank changes. Arguments are (newRank, oldRank).
@@ -127,37 +124,19 @@ namespace ShadowSlave.Progression
         /* --- Soul Core API --- */
 
         /// <summary>
-        /// Current number of formed soul cores.
-        /// </summary>
-        public int CurrentSoulCores => currentSoulCores;
-
-        /// <summary>
-        /// Maximum number of soul cores this entity can cultivate or form.
-        /// </summary>
-        public int MaximumSoulCores => maximumSoulCores;
-
-        /// <summary>
         /// Returns current active soul core count.
         /// </summary>
         public int GetSoulCoreCount()
         {
-            return currentSoulCores;
+            return soulCoreState.CurrentSoulCores;
         }
 
         /// <summary>
         /// Returns maximum soul cores cultivatable by this entity.
         /// </summary>
-        public int GetMaximumSoulCores()
-        {
-            return maximumSoulCores;
-        }
-
-        /// <summary>
-        /// Alias for <see cref="GetMaximumSoulCores"/> matching UE5 naming.
-        /// </summary>
         public int GetMaxSoulCores()
         {
-            return maximumSoulCores;
+            return soulCoreState.MaximumSoulCores;
         }
 
         /// <summary>
@@ -165,23 +144,7 @@ namespace ShadowSlave.Progression
         /// </summary>
         public SoulCoreState GetSoulCoreState()
         {
-            return new SoulCoreState(currentSoulCores, maximumSoulCores);
-        }
-
-        /// <summary>
-        /// Returns true if this entity possesses more than one active soul core (Monster class or higher).
-        /// </summary>
-        public bool HasMultipleCores()
-        {
-            return currentSoulCores > 1;
-        }
-
-        /// <summary>
-        /// Returns whether soul core count is at maximum capacity.
-        /// </summary>
-        public bool IsMaxCoresReached()
-        {
-            return currentSoulCores >= maximumSoulCores;
+            return soulCoreState;
         }
 
         /// <summary>
@@ -191,14 +154,14 @@ namespace ShadowSlave.Progression
         /// </summary>
         public bool SetSoulCoreCount(int newCount)
         {
-            int clampedCount = Mathf.Clamp(newCount, 0, maximumSoulCores);
-            if (currentSoulCores == clampedCount)
+            int clampedCount = Mathf.Clamp(newCount, 0, soulCoreState.MaximumSoulCores);
+            if (soulCoreState.CurrentSoulCores == clampedCount)
             {
                 return true;
             }
 
-            int oldCount = currentSoulCores;
-            currentSoulCores = clampedCount;
+            int oldCount = soulCoreState.CurrentSoulCores;
+            soulCoreState = soulCoreState.WithCurrent(clampedCount);
             OnSoulCoreCountChanged?.Invoke(clampedCount, oldCount);
             return true;
         }
@@ -209,19 +172,19 @@ namespace ShadowSlave.Progression
         /// If current cores exceed the new maximum, clamps current cores down and broadcasts <see cref="OnSoulCoreCountChanged"/>.
         /// Returns true.
         /// </summary>
-        public bool SetMaximumSoulCores(int newMax)
+        public bool SetMaxSoulCores(int newMax)
         {
             int clampedMax = Mathf.Max(1, newMax);
-            if (maximumSoulCores == clampedMax)
+            if (soulCoreState.MaximumSoulCores == clampedMax)
             {
                 return true;
             }
 
-            int oldMax = maximumSoulCores;
-            maximumSoulCores = clampedMax;
+            int oldMax = soulCoreState.MaximumSoulCores;
+            soulCoreState = soulCoreState.WithMaximum(clampedMax);
             OnMaxSoulCoresChanged?.Invoke(clampedMax, oldMax);
 
-            if (currentSoulCores > clampedMax)
+            if (soulCoreState.CurrentSoulCores > clampedMax)
             {
                 SetSoulCoreCount(clampedMax);
             }
@@ -230,55 +193,38 @@ namespace ShadowSlave.Progression
         }
 
         /// <summary>
-        /// Alias for <see cref="SetMaximumSoulCores"/> matching UE5 naming.
-        /// </summary>
-        public bool SetMaxSoulCores(int newMax)
-        {
-            return SetMaximumSoulCores(newMax);
-        }
-
-        /// <summary>
         /// Increments soul core count by count (clamped to MaximumSoulCores).
+        /// Overflow-safe against arbitrarily large inputs such as int.MaxValue.
         /// Rejects non-positive count (returns false without mutation or event).
         /// </summary>
-        public bool AddSoulCores(int count = 1)
+        public bool AddSoulCore(int count = 1)
         {
             if (count <= 0)
             {
                 return false;
             }
 
-            return SetSoulCoreCount(currentSoulCores + count);
-        }
-
-        /// <summary>
-        /// Alias for <see cref="AddSoulCores"/> matching UE5 naming.
-        /// </summary>
-        public bool AddSoulCore(int count = 1)
-        {
-            return AddSoulCores(count);
+            int current = soulCoreState.CurrentSoulCores;
+            int max = soulCoreState.MaximumSoulCores;
+            int targetCount = (count >= max - current) ? max : current + count;
+            return SetSoulCoreCount(targetCount);
         }
 
         /// <summary>
         /// Decrements soul core count by count (clamped to at least 0).
+        /// Underflow-safe against arbitrarily large inputs such as int.MaxValue.
         /// Rejects non-positive count (returns false without mutation or event).
         /// </summary>
-        public bool RemoveSoulCores(int count = 1)
+        public bool RemoveSoulCore(int count = 1)
         {
             if (count <= 0)
             {
                 return false;
             }
 
-            return SetSoulCoreCount(currentSoulCores - count);
-        }
-
-        /// <summary>
-        /// Alias for <see cref="RemoveSoulCores"/> matching UE5 naming.
-        /// </summary>
-        public bool RemoveSoulCore(int count = 1)
-        {
-            return RemoveSoulCores(count);
+            int current = soulCoreState.CurrentSoulCores;
+            int targetCount = (count >= current) ? 0 : current - count;
+            return SetSoulCoreCount(targetCount);
         }
     }
 }

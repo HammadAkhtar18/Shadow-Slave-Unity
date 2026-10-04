@@ -27,7 +27,7 @@ namespace ShadowSlave.Progression
     /// and multi-core divine aspects / nightmare creatures up to Titan class (7).
     /// </summary>
     [Serializable]
-    public struct SoulCoreState
+    public struct SoulCoreState : IEquatable<SoulCoreState>
     {
         [SerializeField]
         private int currentSoulCores;
@@ -44,10 +44,43 @@ namespace ShadowSlave.Progression
             currentSoulCores = Mathf.Clamp(current, 0, maximumSoulCores);
         }
 
+        internal SoulCoreState WithCurrent(int current)
+        {
+            SoulCoreState copy = this;
+            copy.currentSoulCores = current;
+            return copy;
+        }
+
+        internal SoulCoreState WithMaximum(int max)
+        {
+            SoulCoreState copy = this;
+            copy.maximumSoulCores = max;
+            return copy;
+        }
+
         /// <summary>True if entity possesses more than one active soul core (Monster class or higher).</summary>
         public bool HasMultipleCores => currentSoulCores > 1;
 
         /// <summary>True if current soul cores have reached maximum capacity.</summary>
         public bool IsMaxCoresReached => currentSoulCores >= maximumSoulCores;
+
+        public bool Equals(SoulCoreState other)
+        {
+            return currentSoulCores == other.currentSoulCores &&
+                   maximumSoulCores == other.maximumSoulCores;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is SoulCoreState other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return (currentSoulCores * 397) ^ maximumSoulCores;
+            }
+        }
     }
 }

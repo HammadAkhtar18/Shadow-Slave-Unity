@@ -14,7 +14,7 @@
   * For single-core humans, core destruction shatters the soul, resulting in death or rendering the victim a "Hollow" (a living body devoid of a soul).
   * Multi-core entities can survive the loss, detonation, or sacrifice of a core (e.g., Nephis in the Third Nightmare, Mordret shattering cores), though it inflicts devastating soul damage and reduces class/essence capacity.
 * **Core Restoration**: Multi-core beings can reconstruct lost cores by harvesting soul/shadow fragments. Conversely, single-core souls destroyed into Hollows cannot be restored through standard means.
-* **Universal Ceiling**: Seven (7) soul cores (Titan class) is the established upper bound in canon.
+* **Highest Observed Cores**: Seven (7) soul cores (Titan class) is the highest established soul-core count observed in the researched canon.
 
 ## Chapter References
 
@@ -27,7 +27,7 @@
 * **Chapter 1090 ("Tyrant")**: Sunny reaches five soul cores during the Antarctica campaign, attaining Tyrant class.
 * **Chapter 1270 ("Terror")**: Attainment of six cores (Terror class) in East Antarctica.
 * **Chapter 1517 ("Supernova")**: Nephis detonates an active core against Soul Stealer's puppets and forges her seventh core, reaching Titan class; demonstrates core sacrifice and restoration mechanics.
-* **Chapters 1585+ ("Verge / Tomb of Ariel")**: Sunny achieves his seventh core (Titan class), confirming the universal 7-core ceiling for Divine Aspect holders.
+* **Chapters 1585+ ("Verge / Tomb of Ariel")**: Sunny achieves his seventh core (Titan class), confirming seven cores as the highest observed core count for Divine Aspect holders.
 
 ## Confirmed Mechanics
 
@@ -38,12 +38,19 @@
 * `[CANON]` Character Rank and Soul Core count (Class) operate as completely independent progression parameters.
 * `[CANON]` Soul essence capacity scales directly with soul core count.
 * `[CANON]` Cores can be destroyed, sacrificed, or lost, with multi-core entities surviving reduced core counts.
+* `[CANON]` Seven soul cores is the highest established soul-core count observed in the researched canon.
 
 ## Inferred Mechanics
 
 * `[INFERRED]` A character with `CurrentSoulCores = 0` accurately models a non-awakened mundane human or a hollow entity.
 * `[INFERRED]` Maximum soul core capacity is a property of the soul's structural capacity (1 for standard humans, up to 7 for divine aspects or nightmare beasts).
 * `[INFERRED]` `CurrentSoulCores` is bounded by `0 <= CurrentSoulCores <= MaximumSoulCores`.
+
+## Game-Design Adaptations
+
+* `[GAME ADAPTATION]` Initial default state is 1 current core and 1 max core for playable/Awakened characters (matching UE5). Non-awakened mundane entities or hollow entities can be configured with 0 current cores.
+* `[GAME ADAPTATION]` Maximum soul cores is clamped to at least 1 (`Mathf.Max(1, max)`), following UE5 architecture.
+* `[GAME ADAPTATION]` `AddSoulCore` and `RemoveSoulCore` calculations are implemented to be overflow-safe against arbitrarily large numbers such as `int.MaxValue`.
 
 ## Unknown / Unresolved
 
@@ -67,17 +74,17 @@
 
 ## Unity Design Decisions
 
-* **Unified Progression Ownership**: `ProgressionComponent` retains ownership of both `CharacterRank` and `SoulCoreState`, mirroring UE5 and preserving the canonical relationship between Rank (quality) and Class/Cores (quantity).
+* **Stored Component State**: `ProgressionComponent` serializes and owns `SoulCoreState` directly as its component state (`soulCoreState`), matching the UE5 architecture and avoiding duplicate state fields.
 * **Attribute Decoupling**: In accordance with UE5 architecture and canon boundaries, `ProgressionComponent` does not duplicate or alter `AttributeComponent` resource pools. Future essence multipliers can read `GetSoulCoreCount()` without tight coupling.
-* **API Completeness**: Unity exposes both standard property accessors and UE5-matching methods:
-  * `GetSoulCoreCount()`, `CurrentSoulCores`
-  * `GetMaximumSoulCores()`, `GetMaxSoulCores()`, `MaximumSoulCores`
+* **Exact UE5-Matching API**: ProgressionComponent exposes strictly the UE5-matching API without unnecessary aliases:
+  * `GetSoulCoreCount()`
   * `SetSoulCoreCount(int)`
-  * `SetMaximumSoulCores(int)`, `SetMaxSoulCores(int)`
-  * `AddSoulCores(int)`, `AddSoulCore(int)`
-  * `RemoveSoulCores(int)`, `RemoveSoulCore(int)`
-  * `HasMultipleCores()`, `IsMaxCoresReached()`
-  * `GetSoulCoreState()` returning `SoulCoreState` struct
+  * `GetMaxSoulCores()`
+  * `SetMaxSoulCores(int)`
+  * `AddSoulCore(int count = 1)` (overflow-safe)
+  * `RemoveSoulCore(int count = 1)` (underflow-safe)
+  * `GetSoulCoreState()` returning stored `SoulCoreState` struct
+* **State Helpers**: Helper queries (`HasMultipleCores`, `IsMaxCoresReached`) reside directly on `SoulCoreState`.
 * **Event Matching**: Unity fires `OnSoulCoreCountChanged(newCount, oldCount)` and `OnMaxSoulCoresChanged(newMax, oldMax)` matching UE5 ordering and zero-event same-value suppression.
 * **Invariants**:
   * `0 <= CurrentSoulCores <= MaximumSoulCores`

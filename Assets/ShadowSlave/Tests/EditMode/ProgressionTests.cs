@@ -341,12 +341,7 @@ namespace ShadowSlave.Tests.EditMode
         public void SoulCores_DefaultState_IsOneAndOne()
         {
             Assert.AreEqual(1, _progression.GetSoulCoreCount());
-            Assert.AreEqual(1, _progression.CurrentSoulCores);
-            Assert.AreEqual(1, _progression.GetMaximumSoulCores());
             Assert.AreEqual(1, _progression.GetMaxSoulCores());
-            Assert.AreEqual(1, _progression.MaximumSoulCores);
-            Assert.IsFalse(_progression.HasMultipleCores());
-            Assert.IsTrue(_progression.IsMaxCoresReached());
 
             SoulCoreState state = _progression.GetSoulCoreState();
             Assert.AreEqual(1, state.CurrentSoulCores);
@@ -358,25 +353,48 @@ namespace ShadowSlave.Tests.EditMode
         [Test]
         public void SoulCores_Getters_ReturnCorrectValues()
         {
-            _progression.SetMaximumSoulCores(7);
+            _progression.SetMaxSoulCores(7);
             _progression.SetSoulCoreCount(4);
 
             Assert.AreEqual(4, _progression.GetSoulCoreCount());
-            Assert.AreEqual(4, _progression.CurrentSoulCores);
-            Assert.AreEqual(7, _progression.GetMaximumSoulCores());
             Assert.AreEqual(7, _progression.GetMaxSoulCores());
-            Assert.AreEqual(7, _progression.MaximumSoulCores);
-            Assert.IsTrue(_progression.HasMultipleCores());
-            Assert.IsFalse(_progression.IsMaxCoresReached());
+
+            SoulCoreState state = _progression.GetSoulCoreState();
+            Assert.AreEqual(4, state.CurrentSoulCores);
+            Assert.AreEqual(7, state.MaximumSoulCores);
+            Assert.IsTrue(state.HasMultipleCores);
+            Assert.IsFalse(state.IsMaxCoresReached);
 
             _progression.SetSoulCoreCount(7);
-            Assert.IsTrue(_progression.IsMaxCoresReached());
+            Assert.IsTrue(_progression.GetSoulCoreState().IsMaxCoresReached);
+        }
+
+        [Test]
+        public void SoulCoreState_ConstructorNormalization()
+        {
+            SoulCoreState state0 = new SoulCoreState(-5, 0);
+            Assert.AreEqual(1, state0.MaximumSoulCores);
+            Assert.AreEqual(0, state0.CurrentSoulCores);
+            Assert.IsFalse(state0.HasMultipleCores);
+            Assert.IsFalse(state0.IsMaxCoresReached);
+
+            SoulCoreState state1 = new SoulCoreState(10, 4);
+            Assert.AreEqual(4, state1.MaximumSoulCores);
+            Assert.AreEqual(4, state1.CurrentSoulCores);
+            Assert.IsTrue(state1.HasMultipleCores);
+            Assert.IsTrue(state1.IsMaxCoresReached);
+
+            SoulCoreState state2 = new SoulCoreState(3, 7);
+            Assert.AreEqual(7, state2.MaximumSoulCores);
+            Assert.AreEqual(3, state2.CurrentSoulCores);
+            Assert.IsTrue(state2.HasMultipleCores);
+            Assert.IsFalse(state2.IsMaxCoresReached);
         }
 
         [Test]
         public void SetSoulCoreCount_ValidChanges_FiresEvent()
         {
-            _progression.SetMaximumSoulCores(5);
+            _progression.SetMaxSoulCores(5);
 
             int eventCount = 0;
             int recordedNew = -1;
@@ -419,7 +437,7 @@ namespace ShadowSlave.Tests.EditMode
         [Test]
         public void SetSoulCoreCount_InvalidValues_ClampsToZeroAndMax()
         {
-            _progression.SetMaximumSoulCores(3);
+            _progression.SetMaxSoulCores(3);
 
             _progression.SetSoulCoreCount(-10);
             Assert.AreEqual(0, _progression.GetSoulCoreCount());
@@ -429,7 +447,7 @@ namespace ShadowSlave.Tests.EditMode
         }
 
         [Test]
-        public void SetMaximumSoulCores_IncreaseAndDecrease_FiresEvent()
+        public void SetMaxSoulCores_IncreaseAndDecrease_FiresEvent()
         {
             int eventCount = 0;
             int recordedNew = -1;
@@ -442,45 +460,45 @@ namespace ShadowSlave.Tests.EditMode
                 recordedOld = oldMax;
             };
 
-            _progression.SetMaximumSoulCores(4);
+            _progression.SetMaxSoulCores(4);
             Assert.AreEqual(1, eventCount);
             Assert.AreEqual(4, recordedNew);
             Assert.AreEqual(1, recordedOld);
-            Assert.AreEqual(4, _progression.GetMaximumSoulCores());
+            Assert.AreEqual(4, _progression.GetMaxSoulCores());
 
-            _progression.SetMaximumSoulCores(2);
+            _progression.SetMaxSoulCores(2);
             Assert.AreEqual(2, eventCount);
             Assert.AreEqual(2, recordedNew);
             Assert.AreEqual(4, recordedOld);
-            Assert.AreEqual(2, _progression.GetMaximumSoulCores());
+            Assert.AreEqual(2, _progression.GetMaxSoulCores());
         }
 
         [Test]
-        public void SetMaximumSoulCores_SameValue_DoesNotFireEvent()
+        public void SetMaxSoulCores_SameValue_DoesNotFireEvent()
         {
-            _progression.SetMaximumSoulCores(3);
+            _progression.SetMaxSoulCores(3);
 
             int eventCount = 0;
             _progression.OnMaxSoulCoresChanged += (_, __) => eventCount++;
 
-            _progression.SetMaximumSoulCores(3);
+            _progression.SetMaxSoulCores(3);
             Assert.AreEqual(0, eventCount);
         }
 
         [Test]
-        public void SetMaximumSoulCores_InvalidValues_ClampsToOne()
+        public void SetMaxSoulCores_InvalidValues_ClampsToOne()
         {
-            _progression.SetMaximumSoulCores(0);
-            Assert.AreEqual(1, _progression.GetMaximumSoulCores());
+            _progression.SetMaxSoulCores(0);
+            Assert.AreEqual(1, _progression.GetMaxSoulCores());
 
-            _progression.SetMaximumSoulCores(-5);
-            Assert.AreEqual(1, _progression.GetMaximumSoulCores());
+            _progression.SetMaxSoulCores(-5);
+            Assert.AreEqual(1, _progression.GetMaxSoulCores());
         }
 
         [Test]
-        public void SetMaximumSoulCores_DecreasingBelowCurrent_ClampsCurrentAndFiresEventsInCorrectOrder()
+        public void SetMaxSoulCores_DecreasingBelowCurrent_ClampsCurrentAndFiresEventsInCorrectOrder()
         {
-            _progression.SetMaximumSoulCores(7);
+            _progression.SetMaxSoulCores(7);
             _progression.SetSoulCoreCount(5);
 
             var eventLog = new System.Collections.Generic.List<string>();
@@ -495,19 +513,19 @@ namespace ShadowSlave.Tests.EditMode
                 eventLog.Add($"Count:{newCount},{oldCount}");
             };
 
-            _progression.SetMaximumSoulCores(3);
+            _progression.SetMaxSoulCores(3);
 
             Assert.AreEqual(2, eventLog.Count);
             Assert.AreEqual("Max:3,7", eventLog[0]);
             Assert.AreEqual("Count:3,5", eventLog[1]);
-            Assert.AreEqual(3, _progression.GetMaximumSoulCores());
+            Assert.AreEqual(3, _progression.GetMaxSoulCores());
             Assert.AreEqual(3, _progression.GetSoulCoreCount());
         }
 
         [Test]
-        public void AddSoulCores_ValidAddition_IncreasesCountAndFiresEvent()
+        public void AddSoulCore_ValidAddition_IncreasesCountAndFiresEvent()
         {
-            _progression.SetMaximumSoulCores(7);
+            _progression.SetMaxSoulCores(7);
             _progression.SetSoulCoreCount(1);
 
             int eventCount = 0;
@@ -521,7 +539,7 @@ namespace ShadowSlave.Tests.EditMode
                 recordedOld = oldCount;
             };
 
-            bool success = _progression.AddSoulCores(2);
+            bool success = _progression.AddSoulCore(2);
             Assert.IsTrue(success);
             Assert.AreEqual(3, _progression.GetSoulCoreCount());
             Assert.AreEqual(1, eventCount);
@@ -530,27 +548,27 @@ namespace ShadowSlave.Tests.EditMode
         }
 
         [Test]
-        public void AddSoulCores_ZeroOrNegative_ReturnsFalse_NoMutationOrEvent()
+        public void AddSoulCore_ZeroOrNegative_ReturnsFalse_NoMutationOrEvent()
         {
-            _progression.SetMaximumSoulCores(5);
+            _progression.SetMaxSoulCores(5);
             _progression.SetSoulCoreCount(2);
 
             int eventCount = 0;
             _progression.OnSoulCoreCountChanged += (_, __) => eventCount++;
 
-            Assert.IsFalse(_progression.AddSoulCores(0));
-            Assert.IsFalse(_progression.AddSoulCores(-1));
+            Assert.IsFalse(_progression.AddSoulCore(0));
+            Assert.IsFalse(_progression.AddSoulCore(-1));
             Assert.AreEqual(2, _progression.GetSoulCoreCount());
             Assert.AreEqual(0, eventCount);
         }
 
         [Test]
-        public void AddSoulCores_ExceedingMaximum_ClampsToMaximum()
+        public void AddSoulCore_ExceedingMaximum_ClampsToMaximum()
         {
-            _progression.SetMaximumSoulCores(4);
+            _progression.SetMaxSoulCores(4);
             _progression.SetSoulCoreCount(3);
 
-            bool success = _progression.AddSoulCores(5);
+            bool success = _progression.AddSoulCore(5);
             Assert.IsTrue(success);
             Assert.AreEqual(4, _progression.GetSoulCoreCount());
 
@@ -558,16 +576,49 @@ namespace ShadowSlave.Tests.EditMode
             int eventCount = 0;
             _progression.OnSoulCoreCountChanged += (_, __) => eventCount++;
 
-            bool atMaxSuccess = _progression.AddSoulCores(1);
+            bool atMaxSuccess = _progression.AddSoulCore(1);
             Assert.IsTrue(atMaxSuccess);
             Assert.AreEqual(4, _progression.GetSoulCoreCount());
             Assert.AreEqual(0, eventCount);
         }
 
         [Test]
-        public void RemoveSoulCores_ValidRemoval_DecreasesCountAndFiresEvent()
+        public void AddSoulCore_IntMaxValue_OverflowSafe_ClampsToMaximum()
         {
-            _progression.SetMaximumSoulCores(7);
+            _progression.SetMaxSoulCores(5);
+            _progression.SetSoulCoreCount(2);
+
+            int eventCount = 0;
+            int recordedNew = -1;
+            int recordedOld = -1;
+
+            _progression.OnSoulCoreCountChanged += (newCount, oldCount) =>
+            {
+                eventCount++;
+                recordedNew = newCount;
+                recordedOld = oldCount;
+            };
+
+            bool success = _progression.AddSoulCore(int.MaxValue);
+            Assert.IsTrue(success);
+            Assert.AreEqual(5, _progression.GetSoulCoreCount());
+            Assert.AreEqual(1, eventCount);
+            Assert.AreEqual(5, recordedNew);
+            Assert.AreEqual(2, recordedOld);
+            Assert.GreaterOrEqual(_progression.GetSoulCoreCount(), 0);
+            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaxSoulCores());
+
+            // Adding int.MaxValue when already at maximum should not fire extra event
+            bool atMaxSuccess = _progression.AddSoulCore(int.MaxValue);
+            Assert.IsTrue(atMaxSuccess);
+            Assert.AreEqual(5, _progression.GetSoulCoreCount());
+            Assert.AreEqual(1, eventCount);
+        }
+
+        [Test]
+        public void RemoveSoulCore_ValidRemoval_DecreasesCountAndFiresEvent()
+        {
+            _progression.SetMaxSoulCores(7);
             _progression.SetSoulCoreCount(5);
 
             int eventCount = 0;
@@ -581,7 +632,7 @@ namespace ShadowSlave.Tests.EditMode
                 recordedOld = oldCount;
             };
 
-            bool success = _progression.RemoveSoulCores(2);
+            bool success = _progression.RemoveSoulCore(2);
             Assert.IsTrue(success);
             Assert.AreEqual(3, _progression.GetSoulCoreCount());
             Assert.AreEqual(1, eventCount);
@@ -590,25 +641,25 @@ namespace ShadowSlave.Tests.EditMode
         }
 
         [Test]
-        public void RemoveSoulCores_ZeroOrNegative_ReturnsFalse_NoMutationOrEvent()
+        public void RemoveSoulCore_ZeroOrNegative_ReturnsFalse_NoMutationOrEvent()
         {
             _progression.SetSoulCoreCount(3);
 
             int eventCount = 0;
             _progression.OnSoulCoreCountChanged += (_, __) => eventCount++;
 
-            Assert.IsFalse(_progression.RemoveSoulCores(0));
-            Assert.IsFalse(_progression.RemoveSoulCores(-2));
+            Assert.IsFalse(_progression.RemoveSoulCore(0));
+            Assert.IsFalse(_progression.RemoveSoulCore(-2));
             Assert.AreEqual(3, _progression.GetSoulCoreCount());
             Assert.AreEqual(0, eventCount);
         }
 
         [Test]
-        public void RemoveSoulCores_RemovingAllAndTooMany_ClampsToZero()
+        public void RemoveSoulCore_RemovingAllAndTooMany_ClampsToZero()
         {
             _progression.SetSoulCoreCount(2);
 
-            bool success = _progression.RemoveSoulCores(2);
+            bool success = _progression.RemoveSoulCore(2);
             Assert.IsTrue(success);
             Assert.AreEqual(0, _progression.GetSoulCoreCount());
 
@@ -616,33 +667,64 @@ namespace ShadowSlave.Tests.EditMode
             int eventCount = 0;
             _progression.OnSoulCoreCountChanged += (_, __) => eventCount++;
 
-            bool atZeroSuccess = _progression.RemoveSoulCores(5);
+            bool atZeroSuccess = _progression.RemoveSoulCore(5);
             Assert.IsTrue(atZeroSuccess);
             Assert.AreEqual(0, _progression.GetSoulCoreCount());
             Assert.AreEqual(0, eventCount);
         }
 
         [Test]
+        public void RemoveSoulCore_IntMaxValue_UnderflowSafe_ClampsToZero()
+        {
+            _progression.SetMaxSoulCores(5);
+            _progression.SetSoulCoreCount(3);
+
+            int eventCount = 0;
+            int recordedNew = -1;
+            int recordedOld = -1;
+
+            _progression.OnSoulCoreCountChanged += (newCount, oldCount) =>
+            {
+                eventCount++;
+                recordedNew = newCount;
+                recordedOld = oldCount;
+            };
+
+            bool success = _progression.RemoveSoulCore(int.MaxValue);
+            Assert.IsTrue(success);
+            Assert.AreEqual(0, _progression.GetSoulCoreCount());
+            Assert.AreEqual(1, eventCount);
+            Assert.AreEqual(0, recordedNew);
+            Assert.AreEqual(3, recordedOld);
+
+            // Removing int.MaxValue when already at 0 remains 0 with no extra events
+            bool atZeroSuccess = _progression.RemoveSoulCore(int.MaxValue);
+            Assert.IsTrue(atZeroSuccess);
+            Assert.AreEqual(0, _progression.GetSoulCoreCount());
+            Assert.AreEqual(1, eventCount);
+        }
+
+        [Test]
         public void Invariants_CurrentCountNeverViolatesBounds()
         {
-            _progression.SetMaximumSoulCores(5);
+            _progression.SetMaxSoulCores(5);
             _progression.SetSoulCoreCount(-100);
             Assert.GreaterOrEqual(_progression.GetSoulCoreCount(), 0);
-            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaximumSoulCores());
+            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaxSoulCores());
 
             _progression.SetSoulCoreCount(100);
             Assert.GreaterOrEqual(_progression.GetSoulCoreCount(), 0);
-            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaximumSoulCores());
+            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaxSoulCores());
 
-            _progression.SetMaximumSoulCores(-100);
-            Assert.GreaterOrEqual(_progression.GetMaximumSoulCores(), 1);
+            _progression.SetMaxSoulCores(-100);
+            Assert.GreaterOrEqual(_progression.GetMaxSoulCores(), 1);
             Assert.GreaterOrEqual(_progression.GetSoulCoreCount(), 0);
-            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaximumSoulCores());
+            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaxSoulCores());
 
-            _progression.AddSoulCores(999);
-            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaximumSoulCores());
+            _progression.AddSoulCore(999);
+            Assert.LessOrEqual(_progression.GetSoulCoreCount(), _progression.GetMaxSoulCores());
 
-            _progression.RemoveSoulCores(999);
+            _progression.RemoveSoulCore(999);
             Assert.GreaterOrEqual(_progression.GetSoulCoreCount(), 0);
         }
 
@@ -652,10 +734,10 @@ namespace ShadowSlave.Tests.EditMode
             _progression.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
             Assert.AreEqual(ShadowSlaveCharacterRank.Awakened, _progression.GetCharacterRank());
 
-            _progression.SetMaximumSoulCores(5);
+            _progression.SetMaxSoulCores(5);
             _progression.SetSoulCoreCount(4);
-            _progression.AddSoulCores(1);
-            _progression.RemoveSoulCores(2);
+            _progression.AddSoulCore(1);
+            _progression.RemoveSoulCore(2);
 
             Assert.AreEqual(ShadowSlaveCharacterRank.Awakened, _progression.GetCharacterRank());
         }
@@ -672,33 +754,16 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
             Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
 
-            prog.SetMaximumSoulCores(7);
+            prog.SetMaxSoulCores(7);
             prog.SetSoulCoreCount(7);
-            prog.AddSoulCores(1);
-            prog.RemoveSoulCores(3);
+            prog.AddSoulCore(1);
+            prog.RemoveSoulCore(3);
 
             Assert.AreEqual(100f, attrs.CurrentHealth, 0.001f);
             Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
             Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
 
             Object.DestroyImmediate(testGo);
-        }
-
-        [Test]
-        public void Aliases_GetMaxSoulCores_AddSoulCore_RemoveSoulCore_MatchExactBehavior()
-        {
-            _progression.SetMaxSoulCores(5);
-            Assert.AreEqual(5, _progression.GetMaxSoulCores());
-
-            _progression.SetSoulCoreCount(1);
-            Assert.IsTrue(_progression.AddSoulCore(2));
-            Assert.AreEqual(3, _progression.GetSoulCoreCount());
-
-            Assert.IsTrue(_progression.RemoveSoulCore(1));
-            Assert.AreEqual(2, _progression.GetSoulCoreCount());
-
-            Assert.IsFalse(_progression.AddSoulCore(0));
-            Assert.IsFalse(_progression.RemoveSoulCore(-1));
         }
     }
 }
