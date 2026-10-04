@@ -21,6 +21,7 @@
 7. Brace / parenthesis balance and basic C# token checks via Python (no Unity compile).
 8. UE5 reference at `/workspace/ShadowSlave` was read-only; not modified.
 9. ProgressionComponent stores serialized `SoulCoreState` struct directly with overflow-safe additions (`AddSoulCore` with `int.MaxValue`).
+10. Progression metadata key and value boundary validation (null/empty key rejection, null value rejection, ordinal matching, deduplication).
 
 ## What could not be validated
 

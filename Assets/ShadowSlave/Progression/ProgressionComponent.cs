@@ -238,16 +238,16 @@ namespace ShadowSlave.Progression
         /// <summary>
         /// Sets arbitrary progression key-value metadata for quest and story hooks.
         /// Inserts new keys or overwrites existing keys deterministically without firing events.
-        /// Null keys are safely ignored.
+        /// Null or empty keys, and null values, are safely rejected (no-op).
+        /// Matching is exact, case-sensitive ordinal.
         /// </summary>
         public void SetProgressionMetadata(string key, string value)
         {
-            if (key == null)
+            if (string.IsNullOrEmpty(key) || value == null)
             {
                 return;
             }
 
-            string normalizedValue = value ?? string.Empty;
             int targetIndex = -1;
 
             for (int i = progressionMetadata.Count - 1; i >= 0; i--)
@@ -272,21 +272,23 @@ namespace ShadowSlave.Progression
 
             if (targetIndex >= 0)
             {
-                progressionMetadata[targetIndex] = new ProgressionMetadataEntry(key, normalizedValue);
+                progressionMetadata[targetIndex] = new ProgressionMetadataEntry(key, value);
             }
             else
             {
-                progressionMetadata.Add(new ProgressionMetadataEntry(key, normalizedValue));
+                progressionMetadata.Add(new ProgressionMetadataEntry(key, value));
             }
         }
 
         /// <summary>
         /// Retrieves progression key-value metadata.
         /// Returns true and outputs the stored value if found; otherwise sets value to null and returns false.
+        /// Null or empty keys return false with out value set to null.
+        /// Matching is exact, case-sensitive ordinal.
         /// </summary>
         public bool GetProgressionMetadata(string key, out string value)
         {
-            if (key == null)
+            if (string.IsNullOrEmpty(key))
             {
                 value = null;
                 return false;
@@ -308,10 +310,12 @@ namespace ShadowSlave.Progression
         /// <summary>
         /// Removes progression key-value metadata.
         /// Returns true if a key was found and removed; otherwise returns false.
+        /// Null or empty keys return false.
+        /// Matching is exact, case-sensitive ordinal.
         /// </summary>
         public bool RemoveProgressionMetadata(string key)
         {
-            if (key == null)
+            if (string.IsNullOrEmpty(key))
             {
                 return false;
             }

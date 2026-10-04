@@ -856,26 +856,41 @@ namespace ShadowSlave.Tests.EditMode
         }
 
         [Test]
-        public void ProgressionMetadata_NullAndEmptyKeys_HandledSafely()
+        public void ProgressionMetadata_NullKey_SafelyRejected()
         {
-            // Null key should be safely rejected / no-op
             _progression.SetProgressionMetadata(null, "Ignored");
             Assert.IsFalse(_progression.GetProgressionMetadata(null, out string nullVal));
             Assert.IsNull(nullVal);
             Assert.IsFalse(_progression.RemoveProgressionMetadata(null));
+        }
 
-            // Empty key is valid string
-            _progression.SetProgressionMetadata("", "EmptyKeyValue");
-            Assert.IsTrue(_progression.GetProgressionMetadata("", out string emptyVal));
-            Assert.AreEqual("EmptyKeyValue", emptyVal);
+        [Test]
+        public void ProgressionMetadata_EmptyKey_SafelyRejected()
+        {
+            _progression.SetProgressionMetadata("", "Ignored");
+            Assert.IsFalse(_progression.GetProgressionMetadata("", out string emptyVal));
+            Assert.IsNull(emptyVal);
+            Assert.IsFalse(_progression.RemoveProgressionMetadata(""));
+        }
 
-            Assert.IsTrue(_progression.RemoveProgressionMetadata(""));
-            Assert.IsFalse(_progression.GetProgressionMetadata("", out _));
-
-            // Null value normalized to empty string
+        [Test]
+        public void ProgressionMetadata_NullValue_SafelyRejected_DoesNotCreateEntry()
+        {
             _progression.SetProgressionMetadata("NullValKey", null);
-            Assert.IsTrue(_progression.GetProgressionMetadata("NullValKey", out string recoveredVal));
-            Assert.AreEqual(string.Empty, recoveredVal);
+            Assert.IsFalse(_progression.GetProgressionMetadata("NullValKey", out string val));
+            Assert.IsNull(val);
+        }
+
+        [Test]
+        public void ProgressionMetadata_NullValue_DoesNotOverwriteExistingEntry()
+        {
+            _progression.SetProgressionMetadata("ExistingKey", "OriginalValue");
+            Assert.IsTrue(_progression.GetProgressionMetadata("ExistingKey", out string valBefore));
+            Assert.AreEqual("OriginalValue", valBefore);
+
+            _progression.SetProgressionMetadata("ExistingKey", null);
+            Assert.IsTrue(_progression.GetProgressionMetadata("ExistingKey", out string valAfter));
+            Assert.AreEqual("OriginalValue", valAfter);
         }
 
         [Test]
