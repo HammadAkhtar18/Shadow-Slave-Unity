@@ -62,4 +62,70 @@ namespace ShadowSlave.Aspects
             }
         }
     }
+
+    /// <summary>
+    /// Runtime state representing an individual Aspect Ability on a character.
+    /// Separates immutable archetype data (<see cref="AspectAbilityDefinition"/>)
+    /// from mutable runtime state (IsUnlocked, IsActive).
+    /// Owned by <see cref="AspectComponent"/>; strictly runtime state, not a ScriptableObject.
+    /// </summary>
+    [Serializable]
+    public class AspectAbilityInstance
+    {
+        [SerializeField]
+        private AspectAbilityDefinition abilityDefinition;
+
+        [SerializeField]
+        private bool isUnlocked;
+
+        [SerializeField]
+        private bool isActive;
+
+        /// <summary>
+        /// Reference to the immutable static definition for this ability archetype.
+        /// </summary>
+        public AspectAbilityDefinition AbilityDefinition => abilityDefinition;
+
+        /// <summary>
+        /// Unique technical identifier from the underlying ability definition, or empty if unbound.
+        /// </summary>
+        public string AbilityId => abilityDefinition != null ? abilityDefinition.AbilityId : string.Empty;
+
+        /// <summary>
+        /// Whether this ability has been unlocked/awakened for this character.
+        /// </summary>
+        public bool IsUnlocked
+        {
+            get => isUnlocked;
+            internal set => isUnlocked = value;
+        }
+
+        /// <summary>
+        /// Whether this ability is currently active or sustained.
+        /// </summary>
+        public bool IsActive
+        {
+            get => isActive;
+            internal set => isActive = value;
+        }
+
+        /// <summary>
+        /// Returns whether this runtime instance is bound to a valid static ability definition.
+        /// </summary>
+        public bool IsValid => abilityDefinition != null;
+
+        public AspectAbilityInstance()
+        {
+            abilityDefinition = null;
+            isUnlocked = false;
+            isActive = false;
+        }
+
+        public AspectAbilityInstance(AspectAbilityDefinition definition, bool isUnlocked = false)
+        {
+            abilityDefinition = definition;
+            this.isUnlocked = isUnlocked;
+            isActive = false;
+        }
+    }
 }
