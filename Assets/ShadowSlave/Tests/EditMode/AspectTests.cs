@@ -2388,5 +2388,418 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual("readonly_verified", readOnlyView["encap_test"]);
             Assert.IsTrue(readOnlyView.ContainsKey("encap_test"));
         }
+
+        /* --- Phase 6: Flaw Binding & Runtime Flaw State Tests --- */
+
+        private FlawDefinition CreateTestFlaw(string flawId = "flaw_clear_conscience", string displayName = "Clear Conscience")
+        {
+            FlawDefinition flaw = CreateTestAsset<FlawDefinition>();
+            flaw.SetFlawId(flawId);
+            SetField(flaw, "displayName", displayName);
+            SetField(flaw, "description", "Cannot tell lies.");
+            return flaw;
+        }
+
+        private AspectDefinition CreateAspectWithFlaw(FlawDefinition flaw, string aspectId = "aspect_shadow_slave")
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            def.SetAspectId(aspectId);
+            SetField(def, "flawDefinition", flaw);
+            return def;
+        }
+
+        [Test]
+        public void GetFlawDefinition_NoFlaw_ReturnsNull()
+        {
+            Assert.IsNull(_aspectComponent.GetFlawDefinition());
+        }
+
+        [Test]
+        public void HasFlaw_NoFlaw_ReturnsFalse()
+        {
+            Assert.IsFalse(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void GetFlawDefinition_ReturnsActiveFlaw()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            Assert.AreSame(flaw, _aspectComponent.GetFlawDefinition());
+        }
+
+        [Test]
+        public void HasFlaw_WithActiveFlaw_ReturnsTrue()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            Assert.IsTrue(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void SetFlawDefinition_NewFlaw_ReturnsTrue()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            bool result = _aspectComponent.SetFlawDefinition(flaw);
+
+            Assert.IsTrue(result);
+        }
+
+        [Test]
+        public void SetFlawDefinition_NewFlaw_UpdatesActiveFlaw()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            Assert.AreSame(flaw, _aspectComponent.GetFlawDefinition());
+            Assert.IsTrue(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void SetFlawDefinition_NewFlaw_FiresOnFlawChanged()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) => eventCount++;
+
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            Assert.AreEqual(1, eventCount);
+        }
+
+        [Test]
+        public void SetFlawDefinition_NewFlaw_EventProvidesCorrectNewAndOldFlaw()
+        {
+            FlawDefinition flawA = CreateTestFlaw("flaw_a", "Flaw A");
+            FlawDefinition flawB = CreateTestFlaw("flaw_b", "Flaw B");
+
+            FlawDefinition capturedNew = null;
+            FlawDefinition capturedOld = null;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                capturedNew = newFlaw;
+                capturedOld = oldFlaw;
+            };
+
+            // First assignment from null
+            _aspectComponent.SetFlawDefinition(flawA);
+            Assert.AreSame(flawA, capturedNew);
+            Assert.IsNull(capturedOld);
+
+            // Reassignment from flawA to flawB
+            _aspectComponent.SetFlawDefinition(flawB);
+            Assert.AreSame(flawB, capturedNew);
+            Assert.AreSame(flawA, capturedOld);
+        }
+
+        [Test]
+        public void SetFlawDefinition_SameFlaw_ReturnsTrue()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            bool result = _aspectComponent.SetFlawDefinition(flaw);
+            Assert.IsTrue(result);
+        }
+
+        [Test]
+        public void SetFlawDefinition_SameFlaw_DoesNotFireEvent()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) => eventCount++;
+
+            _aspectComponent.SetFlawDefinition(flaw);
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void SetFlawDefinition_Null_ClearsFlaw()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+            Assert.IsTrue(_aspectComponent.HasFlaw());
+
+            bool result = _aspectComponent.SetFlawDefinition(null);
+            Assert.IsTrue(result);
+            Assert.IsNull(_aspectComponent.GetFlawDefinition());
+            Assert.IsFalse(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void SetFlawDefinition_Null_FiresEventWhenPreviouslyActive()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            FlawDefinition capturedNew = null;
+            FlawDefinition capturedOld = null;
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                eventCount++;
+                capturedNew = newFlaw;
+                capturedOld = oldFlaw;
+            };
+
+            _aspectComponent.SetFlawDefinition(null);
+            Assert.AreEqual(1, eventCount);
+            Assert.IsNull(capturedNew);
+            Assert.AreSame(flaw, capturedOld);
+        }
+
+        [Test]
+        public void SetFlawDefinition_NullWhenAlreadyNull_ReturnsTrueWithoutEvent()
+        {
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) => eventCount++;
+
+            bool result = _aspectComponent.SetFlawDefinition(null);
+            Assert.IsTrue(result);
+            Assert.AreEqual(0, eventCount);
+            Assert.IsNull(_aspectComponent.GetFlawDefinition());
+        }
+
+        [Test]
+        public void AspectDefinition_WithFlaw_BindsFlawOnSetAspectDefinition()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            AspectDefinition aspect = CreateAspectWithFlaw(flaw);
+
+            bool result = _aspectComponent.SetAspectDefinition(aspect);
+            Assert.IsTrue(result);
+            Assert.AreSame(flaw, _aspectComponent.GetFlawDefinition());
+            Assert.IsTrue(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void AspectDefinition_WithoutFlaw_HasFlawReturnsFalse()
+        {
+            var (aspect, _, _) = CreateTwoAbilityAspect();
+            SetField(aspect, "flawDefinition", null);
+
+            _aspectComponent.SetAspectDefinition(aspect);
+            Assert.IsNull(_aspectComponent.GetFlawDefinition());
+            Assert.IsFalse(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void SetAspectDefinition_ReplacedWithDifferentFlaw_UpdatesActiveFlawAndFiresEvent()
+        {
+            FlawDefinition flawA = CreateTestFlaw("flaw_a", "Flaw A");
+            AspectDefinition aspectA = CreateAspectWithFlaw(flawA, "aspect_a");
+
+            FlawDefinition flawB = CreateTestFlaw("flaw_b", "Flaw B");
+            AspectDefinition aspectB = CreateAspectWithFlaw(flawB, "aspect_b");
+
+            _aspectComponent.SetAspectDefinition(aspectA);
+
+            FlawDefinition capturedNew = null;
+            FlawDefinition capturedOld = null;
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                eventCount++;
+                capturedNew = newFlaw;
+                capturedOld = oldFlaw;
+            };
+
+            _aspectComponent.SetAspectDefinition(aspectB);
+            Assert.AreEqual(1, eventCount);
+            Assert.AreSame(flawB, capturedNew);
+            Assert.AreSame(flawA, capturedOld);
+            Assert.AreSame(flawB, _aspectComponent.GetFlawDefinition());
+        }
+
+        [Test]
+        public void SetAspectDefinition_ReplacedWithSameFlaw_DoesNotFireOnFlawChanged()
+        {
+            FlawDefinition sharedFlaw = CreateTestFlaw("shared_flaw", "Shared Flaw");
+            AspectDefinition aspectA = CreateAspectWithFlaw(sharedFlaw, "aspect_a");
+            AspectDefinition aspectB = CreateAspectWithFlaw(sharedFlaw, "aspect_b");
+
+            _aspectComponent.SetAspectDefinition(aspectA);
+
+            int aspectEventCount = 0;
+            int flawEventCount = 0;
+            _aspectComponent.OnAspectChanged += (newAsp, oldAsp) => aspectEventCount++;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) => flawEventCount++;
+
+            _aspectComponent.SetAspectDefinition(aspectB);
+
+            Assert.AreEqual(1, aspectEventCount);
+            Assert.AreEqual(0, flawEventCount, "OnFlawChanged must NOT fire when active flaw reference remains unchanged.");
+            Assert.AreSame(sharedFlaw, _aspectComponent.GetFlawDefinition());
+        }
+
+        [Test]
+        public void SetAspectDefinition_Null_ClearsFlawAndFiresOnFlawChanged()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            AspectDefinition aspect = CreateAspectWithFlaw(flaw);
+
+            _aspectComponent.SetAspectDefinition(aspect);
+
+            FlawDefinition capturedNew = null;
+            FlawDefinition capturedOld = null;
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                eventCount++;
+                capturedNew = newFlaw;
+                capturedOld = oldFlaw;
+            };
+
+            _aspectComponent.SetAspectDefinition(null);
+            Assert.AreEqual(1, eventCount);
+            Assert.IsNull(capturedNew);
+            Assert.AreSame(flaw, capturedOld);
+            Assert.IsNull(_aspectComponent.GetFlawDefinition());
+            Assert.IsFalse(_aspectComponent.HasFlaw());
+        }
+
+        [Test]
+        public void SetAspectDefinition_SameAspect_DoesNotFireOnFlawChanged()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            AspectDefinition aspect = CreateAspectWithFlaw(flaw);
+
+            _aspectComponent.SetAspectDefinition(aspect);
+
+            int eventCount = 0;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) => eventCount++;
+
+            bool result = _aspectComponent.SetAspectDefinition(aspect);
+            Assert.IsTrue(result);
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void SetAspectDefinition_WhenFlawChanges_FiresOnAspectChangedBeforeOnFlawChanged()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            AspectDefinition aspect = CreateAspectWithFlaw(flaw);
+
+            List<string> eventLog = new List<string>();
+            _aspectComponent.OnAspectChanged += (newAsp, oldAsp) => eventLog.Add("OnAspectChanged");
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) => eventLog.Add("OnFlawChanged");
+
+            _aspectComponent.SetAspectDefinition(aspect);
+
+            Assert.AreEqual(2, eventLog.Count);
+            Assert.AreEqual("OnAspectChanged", eventLog[0], "OnAspectChanged must fire before OnFlawChanged matching UE5 ordering.");
+            Assert.AreEqual("OnFlawChanged", eventLog[1]);
+        }
+
+        [Test]
+        public void SetFlawDefinition_OverridesAspectBoundFlaw()
+        {
+            FlawDefinition flawOriginal = CreateTestFlaw("flaw_orig", "Original Flaw");
+            AspectDefinition aspect = CreateAspectWithFlaw(flawOriginal);
+            _aspectComponent.SetAspectDefinition(aspect);
+            Assert.AreSame(flawOriginal, _aspectComponent.GetFlawDefinition());
+
+            FlawDefinition flawOverride = CreateTestFlaw("flaw_override", "Override Flaw");
+            FlawDefinition capturedNew = null;
+            FlawDefinition capturedOld = null;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                capturedNew = newFlaw;
+                capturedOld = oldFlaw;
+            };
+
+            bool result = _aspectComponent.SetFlawDefinition(flawOverride);
+            Assert.IsTrue(result);
+            Assert.AreSame(flawOverride, _aspectComponent.GetFlawDefinition());
+            Assert.AreSame(aspect, _aspectComponent.GetAspectDefinition(), "AspectDefinition must remain unchanged after Flaw override.");
+            Assert.AreSame(flawOverride, capturedNew);
+            Assert.AreSame(flawOriginal, capturedOld);
+        }
+
+        [Test]
+        public void SetAspectDefinition_ReentrantCallFromOnFlawChanged_FailsGracefullyWithoutStateCorruption()
+        {
+            FlawDefinition flawA = CreateTestFlaw("flaw_a", "Flaw A");
+            AspectDefinition aspectA = CreateAspectWithFlaw(flawA, "aspect_a");
+
+            FlawDefinition flawB = CreateTestFlaw("flaw_b", "Flaw B");
+            AspectDefinition aspectB = CreateAspectWithFlaw(flawB, "aspect_b");
+
+            bool reentrantResult = true;
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                // Attempt re-entrant SetAspectDefinition during OnFlawChanged callback
+                reentrantResult = _aspectComponent.SetAspectDefinition(aspectB);
+            };
+
+            bool primaryResult = _aspectComponent.SetAspectDefinition(aspectA);
+            Assert.IsTrue(primaryResult);
+            Assert.IsFalse(reentrantResult, "Re-entrant SetAspectDefinition during OnFlawChanged must return false due to transition guard.");
+            Assert.AreSame(aspectA, _aspectComponent.GetAspectDefinition());
+            Assert.AreSame(flawA, _aspectComponent.GetFlawDefinition());
+        }
+
+        [Test]
+        public void SetFlawDefinition_DoesNotMutateStaticDefinitions()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            AspectDefinition aspect = CreateAspectWithFlaw(flaw);
+
+            string initialFlawId = flaw.FlawId;
+            string initialFlawName = flaw.DisplayName;
+            string initialAspectId = aspect.AspectId;
+
+            _aspectComponent.SetAspectDefinition(aspect);
+
+            FlawDefinition overrideFlaw = CreateTestFlaw("override", "Override");
+            _aspectComponent.SetFlawDefinition(overrideFlaw);
+
+            Assert.AreEqual(initialFlawId, flaw.FlawId);
+            Assert.AreEqual(initialFlawName, flaw.DisplayName);
+            Assert.AreEqual(initialAspectId, aspect.AspectId);
+            Assert.AreSame(flaw, aspect.FlawDefinition, "AspectDefinition.FlawDefinition must remain unmodified.");
+        }
+
+        [Test]
+        public void SetFlawDefinition_DoesNotMutateProgressionOrAttributes()
+        {
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Ascended);
+            prog.AddSoulCore(4);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(75f);
+            attrs.SetHealth(100f);
+
+            FlawDefinition flaw = CreateTestFlaw();
+            AspectDefinition aspect = CreateAspectWithFlaw(flaw);
+            _aspectComponent.SetAspectDefinition(aspect);
+
+            FlawDefinition overrideFlaw = CreateTestFlaw("flaw_override", "Override Flaw");
+            _aspectComponent.SetFlawDefinition(overrideFlaw);
+            _aspectComponent.SetFlawDefinition(null);
+
+            Assert.AreEqual(ShadowSlaveCharacterRank.Ascended, prog.GetCharacterRank());
+            Assert.AreEqual(4, prog.GetSoulCoreCount());
+            Assert.AreEqual(75f, attrs.CurrentEssence, 0.001f);
+            Assert.AreEqual(100f, attrs.CurrentHealth, 0.001f);
+        }
+
+        [Test]
+        public void GetFlawDefinition_GetterPurity_RepeatedCallsDoNotMutateState()
+        {
+            FlawDefinition flaw = CreateTestFlaw();
+            _aspectComponent.SetFlawDefinition(flaw);
+
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.AreSame(flaw, _aspectComponent.GetFlawDefinition());
+                Assert.IsTrue(_aspectComponent.HasFlaw());
+            }
+        }
     }
 }

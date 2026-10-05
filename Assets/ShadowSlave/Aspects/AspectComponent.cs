@@ -19,6 +19,10 @@ namespace ShadowSlave.Aspects
         [SerializeField]
         private AspectDefinition aspectDefinition;
 
+        [Header("Flaw Configuration")]
+        [SerializeField]
+        private FlawDefinition activeFlawDefinition;
+
         [Header("Runtime Ability State")]
         [SerializeField]
         private List<AspectAbilityInstance> abilityInstances = new List<AspectAbilityInstance>();
@@ -32,6 +36,13 @@ namespace ShadowSlave.Aspects
         /// Does not fire when setting the same definition instance.
         /// </summary>
         public event Action<AspectDefinition, AspectDefinition> OnAspectChanged;
+
+        /// <summary>
+        /// Fires when the active Flaw Definition changes. Arguments are (newFlawDef, oldFlawDef).
+        /// Does not fire when setting the same Flaw definition reference.
+        /// Matches UE5 FOnFlawChangedSignature.
+        /// </summary>
+        public event Action<FlawDefinition, FlawDefinition> OnFlawChanged;
 
         /// <summary>
         /// Fires when an ability instance is unlocked. Argument is the newly unlocked runtime instance.
@@ -117,7 +128,16 @@ namespace ShadowSlave.Aspects
                     }
                 }
 
+                FlawDefinition oldFlaw = activeFlawDefinition;
+                activeFlawDefinition = newAspectDefinition != null ? newAspectDefinition.FlawDefinition : null;
+
                 OnAspectChanged?.Invoke(newAspectDefinition, oldAspectDef);
+
+                if (activeFlawDefinition != oldFlaw)
+                {
+                    OnFlawChanged?.Invoke(activeFlawDefinition, oldFlaw);
+                }
+
                 return true;
             }
             finally
@@ -134,6 +154,40 @@ namespace ShadowSlave.Aspects
         {
             return aspectDefinition != null ? aspectDefinition.AspectRank : AspectRank.Unknown;
         }
+
+        /* --- Flaw API --- */
+
+        /// <summary>
+        /// Returns the active Flaw Definition bound to this character, or null if none is bound.
+        /// Pure query with no side effects.
+        /// </summary>
+        public FlawDefinition GetFlawDefinition() => activeFlawDefinition;
+
+        /// <summary>
+        /// Sets or overrides the active Flaw Definition directly.
+        /// Returns true if the assignment was processed. Suppresses duplicate assignment without firing events.
+        /// Fires <see cref="OnFlawChanged"/> only when the Flaw reference actually changes.
+        /// Matches UE5 UShadowSlaveAspectComponent::SetFlawDefinition semantics.
+        /// Does not use the ability transition guard.
+        /// </summary>
+        public bool SetFlawDefinition(FlawDefinition newFlawDefinition)
+        {
+            if (activeFlawDefinition == newFlawDefinition)
+            {
+                return true;
+            }
+
+            FlawDefinition oldFlaw = activeFlawDefinition;
+            activeFlawDefinition = newFlawDefinition;
+            OnFlawChanged?.Invoke(newFlawDefinition, oldFlaw);
+            return true;
+        }
+
+        /// <summary>
+        /// Returns whether this character currently has an active Flaw bound.
+        /// Pure query with no side effects.
+        /// </summary>
+        public bool HasFlaw() => activeFlawDefinition != null;
 
         /* --- Ability Queries & State Management --- */
 
