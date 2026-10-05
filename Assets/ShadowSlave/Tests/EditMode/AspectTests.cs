@@ -2358,5 +2358,35 @@ namespace ShadowSlave.Tests.EditMode
             Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty(string.Empty, "key", "val"));
             Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty(string.Empty, "key", out string _));
         }
+
+        [Test]
+        public void DynamicProperties_IsEncapsulatedAsReadOnly_AndNotDirectlyMutable()
+        {
+            Type instanceType = typeof(AspectAbilityInstance);
+            PropertyInfo prop = instanceType.GetProperty("DynamicProperties");
+            Assert.IsNotNull(prop, "AspectAbilityInstance must possess a DynamicProperties property.");
+            Assert.AreEqual(typeof(IReadOnlyDictionary<string, string>), prop.PropertyType,
+                "DynamicProperties must be exposed as IReadOnlyDictionary to prevent direct external mutation.");
+            Assert.IsFalse(prop.CanWrite, "DynamicProperties must not expose a public setter.");
+            Assert.IsNull(prop.PropertyType.GetMethod("Add", new[] { typeof(string), typeof(string) }),
+                "DynamicProperties property type must not expose an Add method.");
+            Assert.IsNull(prop.PropertyType.GetMethod("Clear", Type.EmptyTypes),
+                "DynamicProperties property type must not expose a Clear method.");
+            Assert.IsNull(prop.PropertyType.GetMethod("Remove", new[] { typeof(string) }),
+                "DynamicProperties property type must not expose a Remove method.");
+
+            // Verify that instances expose read-only view and cannot be mutated except via AspectComponent
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "encap_test", "readonly_verified");
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.IsNotNull(instance);
+            IReadOnlyDictionary<string, string> readOnlyView = instance.DynamicProperties;
+            Assert.IsNotNull(readOnlyView);
+            Assert.AreEqual(1, readOnlyView.Count);
+            Assert.AreEqual("readonly_verified", readOnlyView["encap_test"]);
+            Assert.IsTrue(readOnlyView.ContainsKey("encap_test"));
+        }
     }
 }

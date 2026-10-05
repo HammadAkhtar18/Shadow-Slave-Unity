@@ -392,8 +392,7 @@ namespace ShadowSlave.Aspects
                 return false;
             }
 
-            instance.DynamicProperties[key] = value ?? string.Empty;
-            return true;
+            return instance.SetDynamicProperty(key, value);
         }
 
         /// <summary>
@@ -417,7 +416,7 @@ namespace ShadowSlave.Aspects
                 return false;
             }
 
-            return instance.DynamicProperties.TryGetValue(key, out value);
+            return instance.TryGetDynamicProperty(key, out value);
         }
     }
 }

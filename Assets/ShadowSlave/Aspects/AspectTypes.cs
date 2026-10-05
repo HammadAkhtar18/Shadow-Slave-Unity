@@ -118,19 +118,41 @@ namespace ShadowSlave.Aspects
         public bool IsValid => abilityDefinition != null;
 
         /// <summary>
-        /// Dynamic instance properties for runtime state tracking without modifying static definitions.
+        /// Read-only view of runtime dynamic instance properties.
+        /// Direct external mutation is prevented; mutations must go through <see cref="AspectComponent.SetAbilityDynamicProperty"/>.
         /// Uses deterministic ordinal key comparison.
         /// </summary>
-        public Dictionary<string, string> DynamicProperties
+        public IReadOnlyDictionary<string, string> DynamicProperties => GetOrCreateDynamicProperties();
+
+        internal bool SetDynamicProperty(string key, string value)
         {
-            get
+            if (string.IsNullOrEmpty(key))
             {
-                if (dynamicProperties == null)
-                {
-                    dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
-                }
-                return dynamicProperties;
+                return false;
             }
+
+            GetOrCreateDynamicProperties()[key] = value ?? string.Empty;
+            return true;
+        }
+
+        internal bool TryGetDynamicProperty(string key, out string value)
+        {
+            if (string.IsNullOrEmpty(key))
+            {
+                value = null;
+                return false;
+            }
+
+            return GetOrCreateDynamicProperties().TryGetValue(key, out value);
+        }
+
+        private Dictionary<string, string> GetOrCreateDynamicProperties()
+        {
+            if (dynamicProperties == null)
+            {
+                dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
+            }
+            return dynamicProperties;
         }
 
         public AspectAbilityInstance()
