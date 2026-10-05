@@ -237,7 +237,14 @@ namespace ShadowSlave.Attributes
             }
 
             _currentEssence -= amount;
-            OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+            try
+            {
+                OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnEssenceChanged subscriber during ConsumeEssence: {ex}");
+            }
             return true;
         }
 
@@ -254,7 +261,14 @@ namespace ShadowSlave.Attributes
             if (restored > 0f)
             {
                 _currentEssence += restored;
-                OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+                try
+                {
+                    OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+                }
+                catch (Exception ex)
+                {
+                    SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnEssenceChanged subscriber during RestoreEssence: {ex}");
+                }
             }
 
             return restored;
@@ -263,7 +277,14 @@ namespace ShadowSlave.Attributes
         public void SetEssence(float newEssence)
         {
             _currentEssence = Mathf.Clamp(newEssence, 0f, _effectiveMaxEssence);
-            OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+            try
+            {
+                OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnEssenceChanged subscriber during SetEssence: {ex}");
+            }
         }
 
         /* --- Modifiers --- */

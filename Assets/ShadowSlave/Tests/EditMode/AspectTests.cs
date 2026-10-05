@@ -1746,8 +1746,10 @@ namespace ShadowSlave.Tests.EditMode
             Action<AspectAbilityInstance> faultyHandler = _ => throw new InvalidOperationException("Simulated listener exception");
             _aspectComponent.OnAbilityActivated += faultyHandler;
 
-            Assert.Throws<InvalidOperationException>(() => _aspectComponent.ActivateAbility("ability_shadow_control"));
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated, "ActivateAbility must succeed and return true even when a listener throws.");
             Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must clear even when listener throws.");
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
 
             _aspectComponent.OnAbilityActivated -= faultyHandler;
 
@@ -2883,20 +2885,93 @@ namespace ShadowSlave.Tests.EditMode
         [Test]
         public void InspectorAssignedAspect_StaleActiveInstances_AreResetToInactive()
         {
-            var (def, ability1, _) = CreateTwoAbilityAspect();
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
             SetField(_aspectComponent, "aspectDefinition", def);
 
-            // Simulate stale serialized runtime instance that was marked active
-            AspectAbilityInstance staleInstance = new AspectAbilityInstance(ability1, true)
+            // Simulate stale serialized runtime instances where one was marked active
+            AspectAbilityInstance stale1 = new AspectAbilityInstance(ability1, false)
             {
                 IsActive = true
             };
-            SetField(_aspectComponent, "abilityInstances", new List<AspectAbilityInstance> { staleInstance });
+            AspectAbilityInstance stale2 = new AspectAbilityInstance(ability2, false);
+            SetField(_aspectComponent, "abilityInstances", new List<AspectAbilityInstance> { stale1, stale2 });
 
             _aspectComponent.ReconcileRuntimeState();
 
-            // Reconciliation should enforce inactive contract on pre-runtime instances
-            Assert.IsFalse(staleInstance.IsActive, "Stale serialized active state must be reset to inactive.");
+            // Reconciliation must detect dirty active state, discard stale instances, and rebuild fresh inactive instances
+            IReadOnlyList<AspectAbilityInstance> instances = _aspectComponent.GetAbilityInstances();
+            Assert.AreEqual(2, instances.Count);
+            foreach (var instance in instances)
+            {
+                Assert.IsFalse(instance.IsActive, "Reconciled instances must be inactive.");
+            }
+            Assert.AreNotSame(stale1, instances[0], "Stale instance must be discarded and replaced with a clean instance.");
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_StaleUnlockedInstances_AreResetToLocked()
+        {
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            // Simulate stale serialized runtime instance where one was marked unlocked
+            AspectAbilityInstance stale1 = new AspectAbilityInstance(ability1, true);
+            AspectAbilityInstance stale2 = new AspectAbilityInstance(ability2, false);
+            SetField(_aspectComponent, "abilityInstances", new List<AspectAbilityInstance> { stale1, stale2 });
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            // Reconciliation must detect dirty unlocked state, discard stale instances, and rebuild fresh locked instances
+            IReadOnlyList<AspectAbilityInstance> instances = _aspectComponent.GetAbilityInstances();
+            Assert.AreEqual(2, instances.Count);
+            foreach (var instance in instances)
+            {
+                Assert.IsFalse(instance.IsUnlocked, "Reconciled instances must be locked initially.");
+            }
+            Assert.AreNotSame(stale1, instances[0], "Stale instance must be discarded and replaced with a clean instance.");
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_StaleDynamicProperties_AreResetToClean()
+        {
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            // Simulate stale serialized runtime instance with dynamic properties populated
+            AspectAbilityInstance stale1 = new AspectAbilityInstance(ability1, false);
+            stale1.SetDynamicProperty("test_prop", "stale_value");
+            AspectAbilityInstance stale2 = new AspectAbilityInstance(ability2, false);
+            SetField(_aspectComponent, "abilityInstances", new List<AspectAbilityInstance> { stale1, stale2 });
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            // Reconciliation must detect dirty dynamic properties, discard stale instances, and rebuild fresh clean instances
+            IReadOnlyList<AspectAbilityInstance> instances = _aspectComponent.GetAbilityInstances();
+            Assert.AreEqual(2, instances.Count);
+            foreach (var instance in instances)
+            {
+                Assert.AreEqual(0, instance.DynamicProperties.Count, "Reconciled instances must have empty dynamic properties.");
+            }
+            Assert.AreNotSame(stale1, instances[0], "Stale instance must be discarded and replaced with a clean instance.");
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_AlreadyCleanInstances_ArePreservedInSync()
+        {
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            // Pre-existing instances that are already clean and in sync
+            AspectAbilityInstance clean1 = new AspectAbilityInstance(ability1, false);
+            AspectAbilityInstance clean2 = new AspectAbilityInstance(ability2, false);
+            SetField(_aspectComponent, "abilityInstances", new List<AspectAbilityInstance> { clean1, clean2 });
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            IReadOnlyList<AspectAbilityInstance> instances = _aspectComponent.GetAbilityInstances();
+            Assert.AreEqual(2, instances.Count);
+            Assert.AreSame(clean1, instances[0], "Clean instances in sync must be preserved.");
+            Assert.AreSame(clean2, instances[1], "Clean instances in sync must be preserved.");
         }
 
         /* 2. Public Collection Encapsulation */
@@ -3063,10 +3138,8 @@ namespace ShadowSlave.Tests.EditMode
                 throw new InvalidOperationException("Simulated exception in OnEssenceChanged listener.");
             };
 
-            Assert.Throws<InvalidOperationException>(() =>
-            {
-                _aspectComponent.ActivateAbility(ability1.AbilityId);
-            });
+            bool activateResult = _aspectComponent.ActivateAbility(ability1.AbilityId);
+            Assert.IsTrue(activateResult, "ActivateAbility must succeed and return true even if an OnEssenceChanged listener throws.");
 
             // Verify state consistency: essence was deducted (50 - 5 = 45) and ability is marked active!
             Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
@@ -3095,10 +3168,8 @@ namespace ShadowSlave.Tests.EditMode
                 throw new InvalidOperationException("Simulated exception in OnAbilityDeactivated listener.");
             };
 
-            Assert.Throws<InvalidOperationException>(() =>
-            {
-                _aspectComponent.SetAspectDefinition(defB);
-            });
+            bool setResult = _aspectComponent.SetAspectDefinition(defB);
+            Assert.IsTrue(setResult, "SetAspectDefinition must succeed and return true even if an OnAbilityDeactivated listener throws.");
 
             // Verify state consistency: state was atomically committed to defB
             Assert.AreSame(defB, _aspectComponent.GetAspectDefinition());
@@ -3120,14 +3191,46 @@ namespace ShadowSlave.Tests.EditMode
                 throw new InvalidOperationException("Simulated exception in OnAbilityActivated listener.");
             };
 
-            Assert.Throws<InvalidOperationException>(() =>
-            {
-                _aspectComponent.ActivateAbility(ability1.AbilityId);
-            });
+            bool activateResult = _aspectComponent.ActivateAbility(ability1.AbilityId);
+            Assert.IsTrue(activateResult, "ActivateAbility must succeed and return true even if an OnAbilityActivated listener throws.");
 
             Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
             Assert.IsTrue(_aspectComponent.IsAbilityActive(ability1.AbilityId));
             Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        [Test]
+        public void ActivateAbility_InsufficientEssence_LeavesAbilityInactive()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(3f); // Less than ability cost of 5f
+
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility(ability1.AbilityId);
+
+            bool activateResult = _aspectComponent.ActivateAbility(ability1.AbilityId);
+            Assert.IsFalse(activateResult, "ActivateAbility must return false when essence is insufficient.");
+            Assert.AreEqual(3f, attrs.CurrentEssence, 0.001f, "Essence must remain untouched when activation fails.");
+            Assert.IsFalse(_aspectComponent.IsAbilityActive(ability1.AbilityId), "Ability must remain inactive when activation fails.");
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must remain clear.");
+        }
+
+        [Test]
+        public void ActivateAbility_SuccessfulActivation_ConsumesExactEssenceAndActivates()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(50f);
+
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility(ability1.AbilityId);
+
+            bool activateResult = _aspectComponent.ActivateAbility(ability1.AbilityId);
+            Assert.IsTrue(activateResult, "ActivateAbility must return true on success.");
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f, "Exact essence cost must be consumed.");
+            Assert.IsTrue(_aspectComponent.IsAbilityActive(ability1.AbilityId), "Ability must become active.");
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must clear.");
         }
 
         /* 5. Reentrant Callback Mutation Policy */

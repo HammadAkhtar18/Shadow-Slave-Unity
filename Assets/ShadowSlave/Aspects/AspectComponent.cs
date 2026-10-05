@@ -92,6 +92,7 @@ namespace ShadowSlave.Aspects
         /// Used during component initialization (Awake) or when an Aspect is assigned via Unity Inspector/serialization.
         /// Ensures instances are created in initial locked/inactive state with clean dynamic properties,
         /// without consuming Essence or activating abilities.
+        /// Discards and rebuilds any serialized instance list containing stale runtime state (unlocked, active, or non-empty dynamic properties).
         /// </summary>
         public void ReconcileRuntimeState()
         {
@@ -116,18 +117,8 @@ namespace ShadowSlave.Aspects
                 return;
             }
 
-            if (IsRuntimeStateInSync())
+            if (IsRuntimeStateCleanAndInSync())
             {
-                // Enforce runtime initial contract on existing synchronized instances
-                for (int i = 0; i < abilityInstances.Count; i++)
-                {
-                    AspectAbilityInstance inst = abilityInstances[i];
-                    if (inst != null && inst.IsActive)
-                    {
-                        inst.IsActive = false;
-                    }
-                }
-
                 if (activeFlawDefinition == null && aspectDefinition.HasFlaw())
                 {
                     activeFlawDefinition = aspectDefinition.FlawDefinition;
@@ -164,7 +155,7 @@ namespace ShadowSlave.Aspects
             }
         }
 
-        private bool IsRuntimeStateInSync()
+        private bool IsRuntimeStateCleanAndInSync()
         {
             if (aspectDefinition == null)
             {
@@ -207,6 +198,13 @@ namespace ShadowSlave.Aspects
 
                     AspectAbilityInstance inst = abilityInstances[instIdx++];
                     if (inst == null || inst.AbilityDefinition != def)
+                    {
+                        return false;
+                    }
+
+                    // Pre-existing serialized instances with dirty runtime state (unlocked, active, or with dynamic properties)
+                    // are not clean and must trigger a rebuild to guarantee initial contract.
+                    if (inst.IsUnlocked || inst.IsActive || inst.DynamicProperties.Count > 0)
                     {
                         return false;
                     }
@@ -287,15 +285,36 @@ namespace ShadowSlave.Aspects
                 {
                     for (int i = 0; i < deactivatedInstances.Count; i++)
                     {
-                        OnAbilityDeactivated?.Invoke(deactivatedInstances[i]);
+                        try
+                        {
+                            OnAbilityDeactivated?.Invoke(deactivatedInstances[i]);
+                        }
+                        catch (Exception ex)
+                        {
+                            SSLog.Error(SSLog.CategoryAspects, $"Exception in OnAbilityDeactivated subscriber during SetAspectDefinition: {ex}");
+                        }
                     }
                 }
 
-                OnAspectChanged?.Invoke(newAspectDefinition, oldAspectDef);
+                try
+                {
+                    OnAspectChanged?.Invoke(newAspectDefinition, oldAspectDef);
+                }
+                catch (Exception ex)
+                {
+                    SSLog.Error(SSLog.CategoryAspects, $"Exception in OnAspectChanged subscriber during SetAspectDefinition: {ex}");
+                }
 
                 if (activeFlawDefinition != oldFlaw)
                 {
-                    OnFlawChanged?.Invoke(activeFlawDefinition, oldFlaw);
+                    try
+                    {
+                        OnFlawChanged?.Invoke(activeFlawDefinition, oldFlaw);
+                    }
+                    catch (Exception ex)
+                    {
+                        SSLog.Error(SSLog.CategoryAspects, $"Exception in OnFlawChanged subscriber during SetAspectDefinition: {ex}");
+                    }
                 }
 
                 return true;
@@ -339,7 +358,14 @@ namespace ShadowSlave.Aspects
 
             FlawDefinition oldFlaw = activeFlawDefinition;
             activeFlawDefinition = newFlawDefinition;
-            OnFlawChanged?.Invoke(newFlawDefinition, oldFlaw);
+            try
+            {
+                OnFlawChanged?.Invoke(newFlawDefinition, oldFlaw);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAspects, $"Exception in OnFlawChanged subscriber during SetFlawDefinition: {ex}");
+            }
             return true;
         }
 
@@ -432,7 +458,14 @@ namespace ShadowSlave.Aspects
             }
 
             instance.IsUnlocked = true;
-            OnAbilityUnlocked?.Invoke(instance);
+            try
+            {
+                OnAbilityUnlocked?.Invoke(instance);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAspects, $"Exception in OnAbilityUnlocked subscriber during UnlockAbility: {ex}");
+            }
             return true;
         }
 
@@ -464,7 +497,14 @@ namespace ShadowSlave.Aspects
             try
             {
                 instance.IsActive = false;
-                OnAbilityDeactivated?.Invoke(instance);
+                try
+                {
+                    OnAbilityDeactivated?.Invoke(instance);
+                }
+                catch (Exception ex)
+                {
+                    SSLog.Error(SSLog.CategoryAspects, $"Exception in OnAbilityDeactivated subscriber during DeactivateAbility: {ex}");
+                }
                 return true;
             }
             finally
@@ -547,6 +587,7 @@ namespace ShadowSlave.Aspects
         /// If already active, safely returns true without consuming resources or firing events.
         /// Configured Essence cost is consumed from <see cref="AttributeComponent"/> before transition commit.
         /// On success, sets IsActive = true and broadcasts <see cref="OnAbilityActivated"/>.
+        /// Catches and logs subscriber exceptions via <see cref="SSLog.Error"/> so listener failures do not abort state commit or report false failures.
         /// Does not implement gameplay effects, VFX, combat actions, or cooldowns.
         /// </summary>
         public bool ActivateAbility(string abilityId)
@@ -579,39 +620,23 @@ namespace ShadowSlave.Aspects
                 if (cost > 0f)
                 {
                     AttributeComponent attributes = GetAttributeComponent();
-                    if (attributes == null)
+                    if (attributes == null || !attributes.ConsumeEssence(cost))
                     {
-                        return false;
-                    }
-
-                    // Commit ability active state optimistically before resource consumption.
-                    // If ConsumeEssence deducts essence and its OnEssenceChanged listener throws,
-                    // the ability state remains consistent with the deducted essence (active).
-                    instance.IsActive = true;
-                    bool consumed;
-                    try
-                    {
-                        consumed = attributes.ConsumeEssence(cost);
-                    }
-                    catch
-                    {
-                        // OnEssenceChanged listener threw after essence was already deducted.
-                        // Keep instance.IsActive = true so state is consistent, and rethrow.
-                        throw;
-                    }
-
-                    if (!consumed)
-                    {
-                        instance.IsActive = false;
                         return false;
                     }
                 }
-                else
+
+                instance.IsActive = true;
+
+                try
                 {
-                    instance.IsActive = true;
+                    OnAbilityActivated?.Invoke(instance);
+                }
+                catch (Exception ex)
+                {
+                    SSLog.Error(SSLog.CategoryAspects, $"Exception in OnAbilityActivated subscriber during ActivateAbility: {ex}");
                 }
 
-                OnAbilityActivated?.Invoke(instance);
                 return true;
             }
             finally
