@@ -1191,5 +1191,736 @@ namespace ShadowSlave.Tests.EditMode
                 Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
             }
         }
+
+        /* --- Phase 4: Ability Activation State Transition Tests --- */
+
+        [Test]
+        public void ActivateAbility_NullOrEmptyId_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            Assert.IsFalse(_aspectComponent.ActivateAbility(null));
+            Assert.IsFalse(_aspectComponent.ActivateAbility(string.Empty));
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void ActivateAbility_NonExistentAbilityId_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            Assert.IsFalse(_aspectComponent.ActivateAbility("non_existent_ability_id"));
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void ActivateAbility_LockedAbility_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            // Ability is not unlocked
+            Assert.IsFalse(_aspectComponent.IsAbilityUnlocked("ability_shadow_control"));
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            Assert.IsFalse(_aspectComponent.ActivateAbility("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void ActivateAbility_PrerequisitesSatisfied_ActivatesSuccessfully()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+        }
+
+        [Test]
+        public void ActivateAbility_FiresOnAbilityActivated_ExactlyOnceWithCorrectInstance()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            int eventCount = 0;
+            AspectAbilityInstance capturedInstance = null;
+            _aspectComponent.OnAbilityActivated += inst =>
+            {
+                eventCount++;
+                capturedInstance = inst;
+            };
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated);
+            Assert.AreEqual(1, eventCount);
+            Assert.IsNotNull(capturedInstance);
+            Assert.AreEqual("ability_shadow_control", capturedInstance.AbilityId);
+            Assert.IsTrue(capturedInstance.IsActive);
+        }
+
+        [Test]
+        public void ActivateAbility_ConsumesExactEssenceCost_FromAttributeComponent()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            // ability_shadow_control BaseEssenceCost is 5f
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated);
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
+        }
+
+        [Test]
+        public void ActivateAbility_ZeroCostAbility_DoesNotConsumeEssence()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition freeAbility = CreateTestAsset<AspectAbilityDefinition>();
+            freeAbility.SetAbilityId("ability_free");
+            SetField(freeAbility, "baseEssenceCost", 0f);
+            SetField(freeAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { freeAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_free");
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_free");
+            Assert.IsTrue(activated);
+            Assert.AreEqual(50f, attrs.CurrentEssence, 0.001f);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_free"));
+        }
+
+        [Test]
+        public void ActivateAbility_ZeroCostAbility_SucceedsWithoutAttributeComponent()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition freeAbility = CreateTestAsset<AspectAbilityDefinition>();
+            freeAbility.SetAbilityId("ability_free");
+            SetField(freeAbility, "baseEssenceCost", 0f);
+            SetField(freeAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { freeAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_free");
+
+            // No AttributeComponent on _actor
+            Assert.IsNull(_aspectComponent.GetAttributeComponent());
+
+            bool activated = _aspectComponent.ActivateAbility("ability_free");
+            Assert.IsTrue(activated);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_free"));
+        }
+
+        [Test]
+        public void ActivateAbility_InsufficientEssence_FailsAndRemainsInactive()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(10f); // ability_shadow_step requires 15f
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+            Assert.AreEqual(10f, attrs.CurrentEssence, 0.001f);
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void ActivateAbility_MissingAttributeComponent_FailsWhenCostGreaterThanZero()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            // No AttributeComponent
+            Assert.IsNull(_aspectComponent.GetAttributeComponent());
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void ActivateAbility_NegativeOrInvalidCost_FailsActivation()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition badAbility = CreateTestAsset<AspectAbilityDefinition>();
+            badAbility.SetAbilityId("ability_bad_cost");
+            SetField(badAbility, "baseEssenceCost", -10f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { badAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_bad_cost");
+
+            bool activated = _aspectComponent.ActivateAbility("ability_bad_cost");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_bad_cost"));
+        }
+
+        [Test]
+        public void ActivateAbility_AlreadyActive_ReturnsTrueWithoutConsumingEssenceOrFiringEvent()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            // First activation
+            bool first = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(first);
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            // Second activation while already active
+            bool second = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(second);
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f, "Essence must not be consumed again on already active ability.");
+            Assert.AreEqual(0, eventCount, "OnAbilityActivated must not fire on already active ability.");
+        }
+
+        [Test]
+        public void ActivateAbility_RepeatedCalls_AreStableAndIdempotent()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            Assert.IsTrue(_aspectComponent.ActivateAbility("ability_shadow_control"));
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
+
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.IsTrue(_aspectComponent.ActivateAbility("ability_shadow_control"));
+                Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+                Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
+            }
+        }
+
+        [Test]
+        public void ActivateAbility_FailureAtomicity_WhenPrerequisitesFail()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step"); // Requires Awakened, cost 15f
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant); // Rank too low
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+            Assert.AreEqual(50f, attrs.CurrentEssence, 0.001f, "Essence must remain untouched on failure.");
+            Assert.AreEqual(0, eventCount, "No event must be fired on failure.");
+        }
+
+        [Test]
+        public void ActivateAbility_FailureAtomicity_WhenEssenceConsumptionFails()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control"); // cost 5f
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            // Kill character so ConsumeEssence returns false
+            attrs.SetHealth(0f);
+            Assert.IsTrue(attrs.IsDead);
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityActivated += _ => eventCount++;
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            Assert.AreEqual(0, eventCount);
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        [Test]
+        public void ActivateAbility_RankPrerequisite_InsufficientRank_Fails()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step"); // requires Awakened
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+            Assert.AreEqual(50f, attrs.CurrentEssence, 0.001f);
+        }
+
+        [Test]
+        public void ActivateAbility_RankPrerequisite_MissingProgressionComponent_Fails()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step"); // requires Awakened
+
+            // No ProgressionComponent on _actor
+            Assert.IsNull(_actor.GetComponent<ProgressionComponent>());
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+        }
+
+        [Test]
+        public void ActivateAbility_RankPrerequisite_UnknownRank_Fails()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step"); // requires Awakened
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            // Rank defaults to Unknown
+            Assert.AreEqual(ShadowSlaveCharacterRank.Unknown, prog.GetCharacterRank());
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsFalse(activated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+        }
+
+        [Test]
+        public void ActivateAbility_RankPrerequisite_EqualOrHigherRank_Succeeds()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step"); // requires Awakened
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Transcendent); // Higher than Awakened
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsTrue(activated);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+            Assert.AreEqual(35f, attrs.CurrentEssence, 0.001f);
+        }
+
+        [Test]
+        public void ActivateAbility_TransitionGuard_ReentrantActivation_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+            _aspectComponent.UnlockAbility("ability_shadow_step");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool reentrantActivationAttempted = false;
+            bool reentrantActivationResult = true;
+
+            _aspectComponent.OnAbilityActivated += inst =>
+            {
+                if (inst.AbilityId == "ability_shadow_control")
+                {
+                    reentrantActivationAttempted = true;
+                    Assert.IsTrue(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must be active during event dispatch.");
+                    reentrantActivationResult = _aspectComponent.ActivateAbility("ability_shadow_step");
+                }
+            };
+
+            bool primaryActivated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(primaryActivated);
+            Assert.IsTrue(reentrantActivationAttempted);
+            Assert.IsFalse(reentrantActivationResult, "Reentrant activation must be rejected while transition is in progress.");
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"), "Reentrant ability must remain inactive.");
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must clear after completion.");
+        }
+
+        [Test]
+        public void ActivateAbility_TransitionGuard_ReentrantDeactivation_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool reentrantDeactivateAttempted = false;
+            bool reentrantDeactivateResult = true;
+
+            _aspectComponent.OnAbilityActivated += inst =>
+            {
+                reentrantDeactivateAttempted = true;
+                reentrantDeactivateResult = _aspectComponent.DeactivateAbility("ability_shadow_control");
+            };
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated);
+            Assert.IsTrue(reentrantDeactivateAttempted);
+            Assert.IsFalse(reentrantDeactivateResult, "Reentrant deactivation must be rejected while activation transition is in progress.");
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        [Test]
+        public void ActivateAbility_TransitionGuard_ReentrantSetAspectDefinition_ReturnsFalse()
+        {
+            var (defA, _, _) = CreateTwoAbilityAspect();
+            AspectDefinition defB = CreateTestAsset<AspectDefinition>();
+            defB.SetAspectId("aspect_b");
+
+            _aspectComponent.SetAspectDefinition(defA);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool reentrantSetAspectResult = true;
+
+            _aspectComponent.OnAbilityActivated += _ =>
+            {
+                reentrantSetAspectResult = _aspectComponent.SetAspectDefinition(defB);
+            };
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated);
+            Assert.IsFalse(reentrantSetAspectResult, "Reentrant SetAspectDefinition must be rejected during activation transition.");
+            Assert.AreEqual("aspect_shadow_slave", _aspectComponent.GetAspectDefinition().AspectId);
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        [Test]
+        public void ActivateAbility_TransitionGuard_ClearsAfterActivation()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+            _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+
+            // Can now deactivate normally
+            bool deactivated = _aspectComponent.DeactivateAbility("ability_shadow_control");
+            Assert.IsTrue(deactivated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        [Test]
+        public void ActivateAbility_TransitionGuard_ClearsEvenIfHandlerThrows()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            Action<AspectAbilityInstance> faultyHandler = _ => throw new InvalidOperationException("Simulated listener exception");
+            _aspectComponent.OnAbilityActivated += faultyHandler;
+
+            Assert.Throws<InvalidOperationException>(() => _aspectComponent.ActivateAbility("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must clear even when listener throws.");
+
+            _aspectComponent.OnAbilityActivated -= faultyHandler;
+
+            // Subsequent deactivation works normally without being blocked by transition guard
+            bool deactivated = _aspectComponent.DeactivateAbility("ability_shadow_control");
+            Assert.IsTrue(deactivated);
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+        }
+
+        [Test]
+        public void DeactivateAbility_TransitionGuard_ReentrantActivation_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+
+            bool reentrantActivateAttempted = false;
+            bool reentrantActivateResult = true;
+
+            _aspectComponent.OnAbilityDeactivated += _ =>
+            {
+                reentrantActivateAttempted = true;
+                Assert.IsTrue(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must be active during deactivation event dispatch.");
+                reentrantActivateResult = _aspectComponent.ActivateAbility("ability_shadow_control");
+            };
+
+            bool deactivated = _aspectComponent.DeactivateAbility("ability_shadow_control");
+            Assert.IsTrue(deactivated);
+            Assert.IsTrue(reentrantActivateAttempted);
+            Assert.IsFalse(reentrantActivateResult, "Reentrant activation must be rejected while deactivation transition is in progress.");
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        [Test]
+        public void DeactivateAbility_AlreadyInactive_ReturnsTrueWithoutFiringEvent()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+
+            int eventCount = 0;
+            _aspectComponent.OnAbilityDeactivated += _ => eventCount++;
+
+            bool result = _aspectComponent.DeactivateAbility("ability_shadow_control");
+            Assert.IsTrue(result);
+            Assert.AreEqual(0, eventCount);
+        }
+
+        [Test]
+        public void DeactivateAbility_NullOrEmptyId_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.DeactivateAbility(null));
+            Assert.IsFalse(_aspectComponent.DeactivateAbility(string.Empty));
+        }
+
+        [Test]
+        public void SetAspectDefinition_TransitionGuard_PreventsReentrantCall()
+        {
+            var (defA, _, _) = CreateTwoAbilityAspect();
+            AspectDefinition defB = CreateTestAsset<AspectDefinition>();
+            defB.SetAspectId("aspect_second");
+
+            _aspectComponent.SetAspectDefinition(defA);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+
+            bool reentrantActivateRejected = false;
+            bool reentrantSetAspectRejected = false;
+
+            Action<AspectAbilityInstance> deactivationListener = _ =>
+            {
+                reentrantActivateRejected = !_aspectComponent.ActivateAbility("ability_shadow_control");
+                reentrantSetAspectRejected = !_aspectComponent.SetAspectDefinition(defA);
+            };
+
+            _aspectComponent.OnAbilityDeactivated += deactivationListener;
+            _aspectComponent.SetAspectDefinition(defB);
+            _aspectComponent.OnAbilityDeactivated -= deactivationListener;
+
+            Assert.IsTrue(reentrantActivateRejected, "Reentrant ActivateAbility during SetAspectDefinition must be rejected.");
+            Assert.IsTrue(reentrantSetAspectRejected, "Reentrant SetAspectDefinition during SetAspectDefinition must be rejected.");
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+            Assert.AreEqual("aspect_second", _aspectComponent.GetAspectDefinition().AspectId);
+        }
+
+        [Test]
+        public void ActivateAbility_DoesNotModifyProgressionComponent()
+        {
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+            prog.SetMaxSoulCores(7);
+            prog.SetSoulCoreCount(3);
+            prog.SetProgressionMetadata("quest_step", "five");
+
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step");
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_step");
+            Assert.IsTrue(activated);
+
+            Assert.AreEqual(ShadowSlaveCharacterRank.Awakened, prog.GetCharacterRank());
+            Assert.AreEqual(3, prog.GetSoulCoreCount());
+            Assert.AreEqual(7, prog.GetMaxSoulCores());
+            Assert.IsTrue(prog.GetProgressionMetadata("quest_step", out string val));
+            Assert.AreEqual("five", val);
+        }
+
+        [Test]
+        public void ActivateAbility_DoesNotModifyStaticDefinitions()
+        {
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            string snapId = ability1.AbilityId;
+            string snapName = ability1.DisplayName;
+            string snapDesc = ability1.Description;
+            ShadowSlaveCharacterRank snapRank = ability1.RequiredCharacterRank;
+            float snapCost = ability1.BaseEssenceCost;
+
+            string snapAspectId = def.AspectId;
+            string snapAspectName = def.DisplayName;
+            AspectRank snapAspectRank = def.AspectRank;
+
+            bool activated = _aspectComponent.ActivateAbility("ability_shadow_control");
+            Assert.IsTrue(activated);
+
+            // Re-verify static definition assets remain completely unaltered
+            Assert.AreEqual(snapId, ability1.AbilityId);
+            Assert.AreEqual(snapName, ability1.DisplayName);
+            Assert.AreEqual(snapDesc, ability1.Description);
+            Assert.AreEqual(snapRank, ability1.RequiredCharacterRank);
+            Assert.AreEqual(snapCost, ability1.BaseEssenceCost, 0.001f);
+
+            Assert.AreEqual(snapAspectId, def.AspectId);
+            Assert.AreEqual(snapAspectName, def.DisplayName);
+            Assert.AreEqual(snapAspectRank, def.AspectRank);
+        }
     }
 }

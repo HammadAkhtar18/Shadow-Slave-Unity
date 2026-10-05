@@ -23,6 +23,10 @@ namespace ShadowSlave.Aspects
         [SerializeField]
         private List<AspectAbilityInstance> abilityInstances = new List<AspectAbilityInstance>();
 
+        [Header("State Transition Guard")]
+        [SerializeField]
+        private bool _isProcessingAbilityTransition = false;
+
         /// <summary>
         /// Fires when the active Aspect Definition changes. Arguments are (newAspectDef, oldAspectDef).
         /// Does not fire when setting the same definition instance.
@@ -40,6 +44,18 @@ namespace ShadowSlave.Aspects
         /// Fires only on actual state transition (does not fire if already inactive).
         /// </summary>
         public event Action<AspectAbilityInstance> OnAbilityDeactivated;
+
+        /// <summary>
+        /// Fires when an ability instance is activated. Argument is the newly activated runtime instance.
+        /// Fires only on actual state transition (does not fire if already active).
+        /// </summary>
+        public event Action<AspectAbilityInstance> OnAbilityActivated;
+
+        /// <summary>
+        /// Returns whether an ability state transition (activation, deactivation, or aspect replacement) is currently in progress.
+        /// Guards against re-entrant delegate callbacks.
+        /// </summary>
+        public bool IsProcessingAbilityTransition => _isProcessingAbilityTransition;
 
         /// <summary>
         /// Returns whether this component currently has an Aspect assigned.
@@ -64,37 +80,50 @@ namespace ShadowSlave.Aspects
                 return true;
             }
 
-            // Deactivate any currently active ability instances before discarding
-            for (int i = 0; i < abilityInstances.Count; i++)
+            if (_isProcessingAbilityTransition)
             {
-                AspectAbilityInstance instance = abilityInstances[i];
-                if (instance != null && instance.IsActive)
-                {
-                    instance.IsActive = false;
-                    OnAbilityDeactivated?.Invoke(instance);
-                }
+                return false;
             }
 
-            abilityInstances.Clear();
-
-            AspectDefinition oldAspectDef = aspectDefinition;
-            aspectDefinition = newAspectDefinition;
-
-            if (newAspectDefinition != null && newAspectDefinition.AbilityDefinitions != null)
+            _isProcessingAbilityTransition = true;
+            try
             {
-                IReadOnlyList<AspectAbilityDefinition> defs = newAspectDefinition.AbilityDefinitions;
-                for (int i = 0; i < defs.Count; i++)
+                // Deactivate any currently active ability instances before discarding
+                for (int i = 0; i < abilityInstances.Count; i++)
                 {
-                    AspectAbilityDefinition abilityDef = defs[i];
-                    if (abilityDef != null)
+                    AspectAbilityInstance instance = abilityInstances[i];
+                    if (instance != null && instance.IsActive)
                     {
-                        abilityInstances.Add(new AspectAbilityInstance(abilityDef, false));
+                        instance.IsActive = false;
+                        OnAbilityDeactivated?.Invoke(instance);
                     }
                 }
-            }
 
-            OnAspectChanged?.Invoke(newAspectDefinition, oldAspectDef);
-            return true;
+                abilityInstances.Clear();
+
+                AspectDefinition oldAspectDef = aspectDefinition;
+                aspectDefinition = newAspectDefinition;
+
+                if (newAspectDefinition != null && newAspectDefinition.AbilityDefinitions != null)
+                {
+                    IReadOnlyList<AspectAbilityDefinition> defs = newAspectDefinition.AbilityDefinitions;
+                    for (int i = 0; i < defs.Count; i++)
+                    {
+                        AspectAbilityDefinition abilityDef = defs[i];
+                        if (abilityDef != null)
+                        {
+                            abilityInstances.Add(new AspectAbilityInstance(abilityDef, false));
+                        }
+                    }
+                }
+
+                OnAspectChanged?.Invoke(newAspectDefinition, oldAspectDef);
+                return true;
+            }
+            finally
+            {
+                _isProcessingAbilityTransition = false;
+            }
         }
 
         /// <summary>
@@ -184,25 +213,39 @@ namespace ShadowSlave.Aspects
 
         /// <summary>
         /// Deactivates the specified Aspect ability by its unique identifier.
-        /// Fails safely and returns false if the ability does not exist.
+        /// Fails safely and returns false if the ability does not exist, abilityId is null/empty, or a transition is in progress.
         /// If the ability is currently active, clears IsActive and broadcasts <see cref="OnAbilityDeactivated"/>.
-        /// Safely succeeds and returns true when the ability exists.
+        /// Safely succeeds and returns true when the ability exists and is already inactive.
         /// </summary>
         public bool DeactivateAbility(string abilityId)
         {
+            if (_isProcessingAbilityTransition || string.IsNullOrEmpty(abilityId))
+            {
+                return false;
+            }
+
             AspectAbilityInstance instance = FindAbilityInstance(abilityId);
             if (instance == null)
             {
                 return false;
             }
 
-            if (instance.IsActive)
+            if (!instance.IsActive)
+            {
+                return true;
+            }
+
+            _isProcessingAbilityTransition = true;
+            try
             {
                 instance.IsActive = false;
                 OnAbilityDeactivated?.Invoke(instance);
+                return true;
             }
-
-            return true;
+            finally
+            {
+                _isProcessingAbilityTransition = false;
+            }
         }
 
         /* --- Attribute Integration --- */
@@ -269,6 +312,62 @@ namespace ShadowSlave.Aspects
             }
 
             return true;
+        }
+
+        /* --- Ability Activation State Transition --- */
+
+        /// <summary>
+        /// Activates the generic runtime state for an unlocked Aspect ability.
+        /// Rejects invalid IDs, re-entrant calls, missing or locked instances, and failed prerequisites.
+        /// If already active, safely returns true without consuming resources or firing events.
+        /// Configured Essence cost is consumed from <see cref="AttributeComponent"/> before transition commit.
+        /// On success, sets IsActive = true and broadcasts <see cref="OnAbilityActivated"/>.
+        /// Does not implement gameplay effects, VFX, combat actions, or cooldowns.
+        /// </summary>
+        public bool ActivateAbility(string abilityId)
+        {
+            if (_isProcessingAbilityTransition || string.IsNullOrEmpty(abilityId))
+            {
+                return false;
+            }
+
+            AspectAbilityInstance instance = FindAbilityInstance(abilityId);
+            if (instance == null)
+            {
+                return false;
+            }
+
+            if (instance.IsActive)
+            {
+                return true;
+            }
+
+            if (!CanActivateAbility(abilityId))
+            {
+                return false;
+            }
+
+            _isProcessingAbilityTransition = true;
+            try
+            {
+                float cost = instance.AbilityDefinition.BaseEssenceCost;
+                if (cost > 0f)
+                {
+                    AttributeComponent attributes = GetAttributeComponent();
+                    if (attributes == null || !attributes.ConsumeEssence(cost))
+                    {
+                        return false;
+                    }
+                }
+
+                instance.IsActive = true;
+                OnAbilityActivated?.Invoke(instance);
+                return true;
+            }
+            finally
+            {
+                _isProcessingAbilityTransition = false;
+            }
         }
     }
 }
