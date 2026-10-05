@@ -2801,5 +2801,463 @@ namespace ShadowSlave.Tests.EditMode
                 Assert.IsTrue(_aspectComponent.HasFlaw());
             }
         }
+
+        /* --- Architecture Hardening Tests --- */
+
+        /* 1. Inspector Aspect Initialization & Reconciliation */
+
+        [Test]
+        public void InspectorAssignedAspect_BuildsRuntimeAbilityInstances()
+        {
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            IReadOnlyList<AspectAbilityInstance> instances = _aspectComponent.GetAbilityInstances();
+            Assert.AreEqual(2, instances.Count);
+            Assert.AreSame(ability1, instances[0].AbilityDefinition);
+            Assert.AreSame(ability2, instances[1].AbilityDefinition);
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_InstancesStartLockedAndInactive()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            foreach (var instance in _aspectComponent.GetAbilityInstances())
+            {
+                Assert.IsFalse(instance.IsUnlocked, "Reconciled instances must start locked.");
+                Assert.IsFalse(instance.IsActive, "Reconciled instances must start inactive.");
+            }
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_DynamicPropertiesStartClean()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            foreach (var instance in _aspectComponent.GetAbilityInstances())
+            {
+                Assert.IsNotNull(instance.DynamicProperties);
+                Assert.AreEqual(0, instance.DynamicProperties.Count, "Reconciled instances must start with clean dynamic properties.");
+            }
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_DoesNotConsumeEssence()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(100f);
+
+            var (def, _, _) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f, "Inspector initialization must not consume essence.");
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_DoesNotActivateAbilities()
+        {
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            bool activatedEventFired = false;
+            _aspectComponent.OnAbilityActivated += _ => activatedEventFired = true;
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            Assert.IsFalse(activatedEventFired, "No activation events should fire during reconciliation.");
+            Assert.IsFalse(_aspectComponent.IsAbilityActive(ability1.AbilityId));
+            Assert.IsFalse(_aspectComponent.IsAbilityActive(ability2.AbilityId));
+        }
+
+        [Test]
+        public void InspectorAssignedAspect_StaleActiveInstances_AreResetToInactive()
+        {
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            // Simulate stale serialized runtime instance that was marked active
+            AspectAbilityInstance staleInstance = new AspectAbilityInstance(ability1, true)
+            {
+                IsActive = true
+            };
+            SetField(_aspectComponent, "abilityInstances", new List<AspectAbilityInstance> { staleInstance });
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            // Reconciliation should enforce inactive contract on pre-runtime instances
+            Assert.IsFalse(staleInstance.IsActive, "Stale serialized active state must be reset to inactive.");
+        }
+
+        /* 2. Public Collection Encapsulation */
+
+        [Test]
+        public void AbilityInstances_PublicView_CannotMutateBackingCollection()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            IReadOnlyList<AspectAbilityInstance> publicInstances = _aspectComponent.GetAbilityInstances();
+            Assert.IsNotNull(publicInstances);
+            Assert.AreEqual(2, publicInstances.Count);
+
+            // Verify downcasting to mutable List throws InvalidCastException
+            Assert.Throws<InvalidCastException>(() =>
+            {
+                List<AspectAbilityInstance> mutableList = (List<AspectAbilityInstance>)publicInstances;
+                mutableList.Clear();
+            });
+
+            // Verify backing list was not modified
+            Assert.AreEqual(2, _aspectComponent.GetAbilityInstances().Count);
+        }
+
+        [Test]
+        public void DynamicProperties_PublicView_CannotMutateBackingDictionary()
+        {
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty(ability1.AbilityId, "mode", "stealth");
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance(ability1.AbilityId);
+            IReadOnlyDictionary<string, string> props = instance.DynamicProperties;
+            Assert.AreEqual("stealth", props["mode"]);
+
+            // Verify downcasting to mutable Dictionary throws InvalidCastException
+            Assert.Throws<InvalidCastException>(() =>
+            {
+                Dictionary<string, string> mutableDict = (Dictionary<string, string>)props;
+                mutableDict["mode"] = "corrupted";
+            });
+
+            // Verify backing dictionary was not mutated
+            Assert.AreEqual("stealth", instance.DynamicProperties["mode"]);
+        }
+
+        [Test]
+        public void DefinitionAbilityCollection_CannotBeMutatedThroughPublicReadSurface()
+        {
+            var (def, ability1, ability2) = CreateTwoAbilityAspect();
+
+            IReadOnlyList<AspectAbilityDefinition> abilities = def.AbilityDefinitions;
+            Assert.AreEqual(2, abilities.Count);
+
+            // Verify downcasting to mutable List throws InvalidCastException
+            Assert.Throws<InvalidCastException>(() =>
+            {
+                List<AspectAbilityDefinition> mutableList = (List<AspectAbilityDefinition>)abilities;
+                mutableList.Clear();
+            });
+
+            // Read access works normally
+            Assert.AreEqual(2, def.AbilityDefinitions.Count);
+            Assert.AreSame(ability1, def.AbilityDefinitions[0]);
+            Assert.AreSame(ability2, def.AbilityDefinitions[1]);
+        }
+
+        [Test]
+        public void MetadataCollections_CannotBeMutatedThroughPublicReadSurface()
+        {
+            AspectDefinition aspectDef = CreateTestAsset<AspectDefinition>();
+            SetField(aspectDef, "metadata", new List<AspectMetadataEntry> { new AspectMetadataEntry("author", "Sunny") });
+
+            AspectAbilityDefinition abilityDef = CreateTestAsset<AspectAbilityDefinition>();
+            SetField(abilityDef, "metadata", new List<AspectMetadataEntry> { new AspectMetadataEntry("cost_tier", "1") });
+
+            FlawDefinition flawDef = CreateTestAsset<FlawDefinition>();
+            SetField(flawDef, "metadata", new List<AspectMetadataEntry> { new AspectMetadataEntry("type", "innate") });
+
+            // Verify AspectDefinition metadata
+            Assert.Throws<InvalidCastException>(() =>
+            {
+                List<AspectMetadataEntry> mutable = (List<AspectMetadataEntry>)aspectDef.Metadata;
+                mutable.Clear();
+            });
+            Assert.AreEqual(1, aspectDef.Metadata.Count);
+
+            // Verify AspectAbilityDefinition metadata
+            Assert.Throws<InvalidCastException>(() =>
+            {
+                List<AspectMetadataEntry> mutable = (List<AspectMetadataEntry>)abilityDef.Metadata;
+                mutable.Clear();
+            });
+            Assert.AreEqual(1, abilityDef.Metadata.Count);
+
+            // Verify FlawDefinition metadata
+            Assert.Throws<InvalidCastException>(() =>
+            {
+                List<AspectMetadataEntry> mutable = (List<AspectMetadataEntry>)flawDef.Metadata;
+                mutable.Clear();
+            });
+            Assert.AreEqual(1, flawDef.Metadata.Count);
+        }
+
+        /* 3. Duplicate Ability ID Policy */
+
+        [Test]
+        public void DuplicateAbilityIds_AreRejected()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_duplicate_test");
+
+            AspectAbilityDefinition a1 = CreateTestAsset<AspectAbilityDefinition>();
+            a1.SetAbilityId("ability_duplicate");
+
+            AspectAbilityDefinition a2 = CreateTestAsset<AspectAbilityDefinition>();
+            a2.SetAbilityId("ability_duplicate");
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { a1, a2 });
+
+            Assert.IsTrue(def.HasDuplicateAbilityIds());
+
+            bool setResult = _aspectComponent.SetAspectDefinition(def);
+            Assert.IsFalse(setResult, "SetAspectDefinition must reject AspectDefinition with duplicate ability IDs.");
+            Assert.IsNull(_aspectComponent.GetAspectDefinition());
+            Assert.AreEqual(0, _aspectComponent.GetAbilityInstances().Count);
+        }
+
+        [Test]
+        public void DuplicateAbilityIds_DoNotCreateAmbiguousRuntimeInstances()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_duplicate_reconcile");
+
+            AspectAbilityDefinition a1 = CreateTestAsset<AspectAbilityDefinition>();
+            a1.SetAbilityId("ability_duplicate");
+
+            AspectAbilityDefinition a2 = CreateTestAsset<AspectAbilityDefinition>();
+            a2.SetAbilityId("ability_duplicate");
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { a1, a2 });
+            SetField(_aspectComponent, "aspectDefinition", def);
+
+            _aspectComponent.ReconcileRuntimeState();
+
+            Assert.AreEqual(0, _aspectComponent.GetAbilityInstances().Count, "ReconcileRuntimeState must not build instances for definitions with duplicate IDs.");
+        }
+
+        /* 4. Event Exception Semantics */
+
+        [Test]
+        public void ActivateAbility_EssenceChangedListenerThrows_StateRemainsConsistent()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(50f);
+
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility(ability1.AbilityId);
+
+            attrs.OnEssenceChanged += (current, max) =>
+            {
+                throw new InvalidOperationException("Simulated exception in OnEssenceChanged listener.");
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                _aspectComponent.ActivateAbility(ability1.AbilityId);
+            });
+
+            // Verify state consistency: essence was deducted (50 - 5 = 45) and ability is marked active!
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive(ability1.AbilityId), "Ability must remain active when essence was consumed.");
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must clear even after exception.");
+        }
+
+        [Test]
+        public void AspectReplacement_DeactivationListenerThrows_StateRemainsConsistent()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(50f);
+
+            var (defA, abilityA1, _) = CreateTwoAbilityAspect();
+            defA.SetAspectId("aspect_a");
+            _aspectComponent.SetAspectDefinition(defA);
+            _aspectComponent.UnlockAbility(abilityA1.AbilityId);
+            _aspectComponent.ActivateAbility(abilityA1.AbilityId);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive(abilityA1.AbilityId));
+
+            var (defB, _, _) = CreateTwoAbilityAspect();
+            defB.SetAspectId("aspect_b");
+
+            _aspectComponent.OnAbilityDeactivated += _ =>
+            {
+                throw new InvalidOperationException("Simulated exception in OnAbilityDeactivated listener.");
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                _aspectComponent.SetAspectDefinition(defB);
+            });
+
+            // Verify state consistency: state was atomically committed to defB
+            Assert.AreSame(defB, _aspectComponent.GetAspectDefinition());
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition, "Transition guard must clear even after exception.");
+        }
+
+        [Test]
+        public void ActivateAbility_OnAbilityActivatedListenerThrows_GuardClearsAndStateRemainsConsistent()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(50f);
+
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility(ability1.AbilityId);
+
+            _aspectComponent.OnAbilityActivated += _ =>
+            {
+                throw new InvalidOperationException("Simulated exception in OnAbilityActivated listener.");
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                _aspectComponent.ActivateAbility(ability1.AbilityId);
+            });
+
+            Assert.AreEqual(45f, attrs.CurrentEssence, 0.001f);
+            Assert.IsTrue(_aspectComponent.IsAbilityActive(ability1.AbilityId));
+            Assert.IsFalse(_aspectComponent.IsProcessingAbilityTransition);
+        }
+
+        /* 5. Reentrant Callback Mutation Policy */
+
+        [Test]
+        public void AspectReplacement_CallbackCannotCorruptOldRuntimeInstances()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(50f);
+
+            var (defA, abilityA1, _) = CreateTwoAbilityAspect();
+            defA.SetAspectId("aspect_a");
+            _aspectComponent.SetAspectDefinition(defA);
+            _aspectComponent.UnlockAbility(abilityA1.AbilityId);
+            _aspectComponent.ActivateAbility(abilityA1.AbilityId);
+
+            var (defB, _, _) = CreateTwoAbilityAspect();
+            defB.SetAspectId("aspect_b");
+
+            bool callbackUnlockResult = true;
+            _aspectComponent.OnAbilityDeactivated += deactivatedInstance =>
+            {
+                // Attempt to unlock discarded instance during deactivation event
+                callbackUnlockResult = _aspectComponent.UnlockAbility(deactivatedInstance.AbilityId);
+            };
+
+            bool setResult = _aspectComponent.SetAspectDefinition(defB);
+            Assert.IsTrue(setResult);
+            // Because abilityInstances was atomically replaced with defB's instances, old instance is not in the component
+            Assert.IsFalse(callbackUnlockResult, "UnlockAbility on discarded instance must return false.");
+            Assert.AreSame(defB, _aspectComponent.GetAspectDefinition());
+        }
+
+        [Test]
+        public void AspectReplacement_CallbackMutationPolicy_IsDeterministic()
+        {
+            FlawDefinition flawOriginal = CreateTestFlaw("flaw_orig", "Original Flaw");
+            AspectDefinition aspect = CreateAspectWithFlaw(flawOriginal);
+
+            FlawDefinition flawCustom = CreateTestFlaw("flaw_custom", "Custom Flaw");
+
+            _aspectComponent.OnFlawChanged += (newFlaw, oldFlaw) =>
+            {
+                if (newFlaw == flawOriginal)
+                {
+                    // Allow overriding flaw definition from callback deterministically
+                    _aspectComponent.SetFlawDefinition(flawCustom);
+                }
+            };
+
+            bool result = _aspectComponent.SetAspectDefinition(aspect);
+            Assert.IsTrue(result);
+            Assert.AreSame(aspect, _aspectComponent.GetAspectDefinition());
+            Assert.AreSame(flawCustom, _aspectComponent.GetFlawDefinition(), "SetFlawDefinition from callback must take deterministic effect.");
+        }
+
+        [Test]
+        public void AspectReplacement_ReentrantActivateAbility_IsRejected()
+        {
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.SetEssence(50f);
+
+            var (defA, abilityA1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(defA);
+            _aspectComponent.UnlockAbility(abilityA1.AbilityId);
+            _aspectComponent.ActivateAbility(abilityA1.AbilityId);
+
+            var (defB, _, _) = CreateTwoAbilityAspect();
+            defB.SetAspectId("aspect_b");
+
+            bool reentrantActivateResult = true;
+            _aspectComponent.OnAbilityDeactivated += _ =>
+            {
+                reentrantActivateResult = _aspectComponent.ActivateAbility(abilityA1.AbilityId);
+            };
+
+            bool setResult = _aspectComponent.SetAspectDefinition(defB);
+            Assert.IsTrue(setResult);
+            Assert.IsFalse(reentrantActivateResult, "Re-entrant ActivateAbility during aspect replacement must be rejected by transition guard.");
+        }
+
+        /* 6. Soul Core Serialized Invariant */
+
+        [Test]
+        public void SoulCoreState_MalformedSerializedState_IsNormalized()
+        {
+            // Simulate malformed deserialized struct: current = -5, max = 0
+            object boxed = default(SoulCoreState);
+            SetField(boxed, "currentSoulCores", -5);
+            SetField(boxed, "maximumSoulCores", 0);
+            SoulCoreState malformed = (SoulCoreState)boxed;
+
+            // Properties defensively enforce invariant
+            Assert.AreEqual(1, malformed.MaximumSoulCores, "MaximumSoulCores property must clamp to at least 1.");
+            Assert.AreEqual(0, malformed.CurrentSoulCores, "CurrentSoulCores property must clamp to at least 0.");
+
+            // Normalize() normalizes backing fields
+            malformed.Normalize();
+            Assert.AreEqual(1, malformed.MaximumSoulCores);
+            Assert.AreEqual(0, malformed.CurrentSoulCores);
+
+            // Test current > max invariant
+            object boxedOverflow = default(SoulCoreState);
+            SetField(boxedOverflow, "maximumSoulCores", 3);
+            SetField(boxedOverflow, "currentSoulCores", 10);
+            SoulCoreState overflow = (SoulCoreState)boxedOverflow;
+            Assert.AreEqual(3, overflow.MaximumSoulCores);
+            Assert.AreEqual(3, overflow.CurrentSoulCores);
+
+            overflow.Normalize();
+            Assert.AreEqual(3, overflow.MaximumSoulCores);
+            Assert.AreEqual(3, overflow.CurrentSoulCores);
+        }
+
+        [Test]
+        public void ProgressionComponent_MalformedSerializedSoulCoreState_IsNormalizedOnAwakeOrDeserialize()
+        {
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+
+            // Simulate deserialization of malformed state into component field
+            object boxed = default(SoulCoreState);
+            SetField(boxed, "currentSoulCores", -10);
+            SetField(boxed, "maximumSoulCores", -2);
+            SetField(prog, "soulCoreState", boxed);
+
+            prog.SendMessage("Awake");
+
+            SoulCoreState normalized = prog.GetSoulCoreState();
+            Assert.AreEqual(1, normalized.MaximumSoulCores);
+            Assert.AreEqual(0, normalized.CurrentSoulCores);
+        }
     }
 }

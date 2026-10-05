@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using ShadowSlave.Attributes;
+using ShadowSlave.Core;
 using ShadowSlave.Progression;
 using UnityEngine;
 
@@ -30,6 +32,8 @@ namespace ShadowSlave.Aspects
         [Header("State Transition Guard")]
         [SerializeField]
         private bool _isProcessingAbilityTransition = false;
+
+        private ReadOnlyCollection<AspectAbilityInstance> _readOnlyAbilityInstances;
 
         /// <summary>
         /// Fires when the active Aspect Definition changes. Arguments are (newAspectDef, oldAspectDef).
@@ -78,11 +82,147 @@ namespace ShadowSlave.Aspects
         /// </summary>
         public AspectDefinition GetAspectDefinition() => aspectDefinition;
 
+        private void Awake()
+        {
+            ReconcileRuntimeState();
+        }
+
+        /// <summary>
+        /// Reconciles runtime ability instances and active flaw with the currently assigned AspectDefinition.
+        /// Used during component initialization (Awake) or when an Aspect is assigned via Unity Inspector/serialization.
+        /// Ensures instances are created in initial locked/inactive state with clean dynamic properties,
+        /// without consuming Essence or activating abilities.
+        /// </summary>
+        public void ReconcileRuntimeState()
+        {
+            if (aspectDefinition == null)
+            {
+                if (abilityInstances != null && abilityInstances.Count > 0)
+                {
+                    abilityInstances.Clear();
+                    _readOnlyAbilityInstances = null;
+                }
+                return;
+            }
+
+            if (aspectDefinition.HasDuplicateAbilityIds())
+            {
+                SSLog.Warning(SSLog.CategoryAspects, $"Rejecting AspectDefinition '{aspectDefinition.name}' during reconciliation due to duplicate ability IDs.");
+                if (abilityInstances != null)
+                {
+                    abilityInstances.Clear();
+                    _readOnlyAbilityInstances = null;
+                }
+                return;
+            }
+
+            if (IsRuntimeStateInSync())
+            {
+                // Enforce runtime initial contract on existing synchronized instances
+                for (int i = 0; i < abilityInstances.Count; i++)
+                {
+                    AspectAbilityInstance inst = abilityInstances[i];
+                    if (inst != null && inst.IsActive)
+                    {
+                        inst.IsActive = false;
+                    }
+                }
+
+                if (activeFlawDefinition == null && aspectDefinition.HasFlaw())
+                {
+                    activeFlawDefinition = aspectDefinition.FlawDefinition;
+                }
+                return;
+            }
+
+            if (abilityInstances == null)
+            {
+                abilityInstances = new List<AspectAbilityInstance>();
+            }
+            else
+            {
+                abilityInstances.Clear();
+            }
+            _readOnlyAbilityInstances = null;
+
+            if (aspectDefinition.AbilityDefinitions != null)
+            {
+                IReadOnlyList<AspectAbilityDefinition> defs = aspectDefinition.AbilityDefinitions;
+                for (int i = 0; i < defs.Count; i++)
+                {
+                    AspectAbilityDefinition abilityDef = defs[i];
+                    if (abilityDef != null)
+                    {
+                        abilityInstances.Add(new AspectAbilityInstance(abilityDef, false));
+                    }
+                }
+            }
+
+            if (activeFlawDefinition == null && aspectDefinition.HasFlaw())
+            {
+                activeFlawDefinition = aspectDefinition.FlawDefinition;
+            }
+        }
+
+        private bool IsRuntimeStateInSync()
+        {
+            if (aspectDefinition == null)
+            {
+                return abilityInstances == null || abilityInstances.Count == 0;
+            }
+
+            if (aspectDefinition.HasDuplicateAbilityIds())
+            {
+                return false;
+            }
+
+            IReadOnlyList<AspectAbilityDefinition> defs = aspectDefinition.AbilityDefinitions;
+            int expectedCount = 0;
+            if (defs != null)
+            {
+                for (int i = 0; i < defs.Count; i++)
+                {
+                    if (defs[i] != null)
+                    {
+                        expectedCount++;
+                    }
+                }
+            }
+
+            if (abilityInstances == null || abilityInstances.Count != expectedCount)
+            {
+                return false;
+            }
+
+            int instIdx = 0;
+            if (defs != null)
+            {
+                for (int i = 0; i < defs.Count; i++)
+                {
+                    AspectAbilityDefinition def = defs[i];
+                    if (def == null)
+                    {
+                        continue;
+                    }
+
+                    AspectAbilityInstance inst = abilityInstances[instIdx++];
+                    if (inst == null || inst.AbilityDefinition != def)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Sets or changes the active Aspect Definition.
         /// Discards previous runtime ability instances (deactivating any active instances),
         /// and populates new instances in locked and inactive initial states.
         /// Returns true if updated. Suppresses duplicate assignment without firing events.
+        /// Rejects aspect definitions containing duplicate ability IDs.
+        /// Commits all state changes atomically before dispatching events to prevent inconsistent state if subscribers throw.
         /// </summary>
         public bool SetAspectDefinition(AspectDefinition newAspectDefinition)
         {
@@ -96,25 +236,30 @@ namespace ShadowSlave.Aspects
                 return false;
             }
 
+            if (newAspectDefinition != null && newAspectDefinition.HasDuplicateAbilityIds())
+            {
+                SSLog.Warning(SSLog.CategoryAspects, $"Rejecting AspectDefinition '{newAspectDefinition.name}' due to duplicate ability IDs.");
+                return false;
+            }
+
             _isProcessingAbilityTransition = true;
             try
             {
-                // Deactivate any currently active ability instances before discarding
+                // 1. Gather active instances to deactivate and deactivate them
+                List<AspectAbilityInstance> deactivatedInstances = null;
                 for (int i = 0; i < abilityInstances.Count; i++)
                 {
                     AspectAbilityInstance instance = abilityInstances[i];
                     if (instance != null && instance.IsActive)
                     {
                         instance.IsActive = false;
-                        OnAbilityDeactivated?.Invoke(instance);
+                        deactivatedInstances ??= new List<AspectAbilityInstance>();
+                        deactivatedInstances.Add(instance);
                     }
                 }
 
-                abilityInstances.Clear();
-
-                AspectDefinition oldAspectDef = aspectDefinition;
-                aspectDefinition = newAspectDefinition;
-
+                // 2. Prepare new runtime instances
+                List<AspectAbilityInstance> newInstances = new List<AspectAbilityInstance>();
                 if (newAspectDefinition != null && newAspectDefinition.AbilityDefinitions != null)
                 {
                     IReadOnlyList<AspectAbilityDefinition> defs = newAspectDefinition.AbilityDefinitions;
@@ -123,13 +268,28 @@ namespace ShadowSlave.Aspects
                         AspectAbilityDefinition abilityDef = defs[i];
                         if (abilityDef != null)
                         {
-                            abilityInstances.Add(new AspectAbilityInstance(abilityDef, false));
+                            newInstances.Add(new AspectAbilityInstance(abilityDef, false));
                         }
                     }
                 }
 
+                // 3. Atomically commit structural state before any events are fired
+                AspectDefinition oldAspectDef = aspectDefinition;
                 FlawDefinition oldFlaw = activeFlawDefinition;
+
+                aspectDefinition = newAspectDefinition;
+                abilityInstances = newInstances;
+                _readOnlyAbilityInstances = null;
                 activeFlawDefinition = newAspectDefinition != null ? newAspectDefinition.FlawDefinition : null;
+
+                // 4. Dispatch events; state is already committed if any listener throws
+                if (deactivatedInstances != null)
+                {
+                    for (int i = 0; i < deactivatedInstances.Count; i++)
+                    {
+                        OnAbilityDeactivated?.Invoke(deactivatedInstances[i]);
+                    }
+                }
 
                 OnAspectChanged?.Invoke(newAspectDefinition, oldAspectDef);
 
@@ -193,10 +353,21 @@ namespace ShadowSlave.Aspects
 
         /// <summary>
         /// Returns all runtime Ability Instances owned by this component for the currently bound Aspect.
+        /// Public view is wrapped in a ReadOnlyCollection to prevent external callers from mutating the backing list.
         /// </summary>
         public IReadOnlyList<AspectAbilityInstance> GetAbilityInstances()
         {
-            return abilityInstances;
+            if (abilityInstances == null)
+            {
+                return Array.Empty<AspectAbilityInstance>();
+            }
+
+            if (_readOnlyAbilityInstances == null)
+            {
+                _readOnlyAbilityInstances = abilityInstances.AsReadOnly();
+            }
+
+            return _readOnlyAbilityInstances;
         }
 
         /// <summary>
@@ -408,13 +579,38 @@ namespace ShadowSlave.Aspects
                 if (cost > 0f)
                 {
                     AttributeComponent attributes = GetAttributeComponent();
-                    if (attributes == null || !attributes.ConsumeEssence(cost))
+                    if (attributes == null)
                     {
                         return false;
                     }
+
+                    // Commit ability active state optimistically before resource consumption.
+                    // If ConsumeEssence deducts essence and its OnEssenceChanged listener throws,
+                    // the ability state remains consistent with the deducted essence (active).
+                    instance.IsActive = true;
+                    bool consumed;
+                    try
+                    {
+                        consumed = attributes.ConsumeEssence(cost);
+                    }
+                    catch
+                    {
+                        // OnEssenceChanged listener threw after essence was already deducted.
+                        // Keep instance.IsActive = true so state is consistent, and rethrow.
+                        throw;
+                    }
+
+                    if (!consumed)
+                    {
+                        instance.IsActive = false;
+                        return false;
+                    }
+                }
+                else
+                {
+                    instance.IsActive = true;
                 }
 
-                instance.IsActive = true;
                 OnAbilityActivated?.Invoke(instance);
                 return true;
             }

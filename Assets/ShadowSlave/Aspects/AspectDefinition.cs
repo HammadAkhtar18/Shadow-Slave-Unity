@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using UnityEngine;
 
 namespace ShadowSlave.Aspects
@@ -41,14 +42,54 @@ namespace ShadowSlave.Aspects
         [SerializeField]
         private string canonProvenance = string.Empty;
 
+        private ReadOnlyCollection<AspectAbilityDefinition> _readOnlyAbilityDefinitions;
+        private List<AspectAbilityDefinition> _cachedAbilityDefinitionsSource;
+
+        private ReadOnlyCollection<AspectMetadataEntry> _readOnlyMetadata;
+        private List<AspectMetadataEntry> _cachedMetadataSource;
+
         public string AspectId => aspectId;
         public string DisplayName => displayName;
         public string Description => description;
         public AspectRank AspectRank => aspectRank;
-        public IReadOnlyList<AspectAbilityDefinition> AbilityDefinitions => abilityDefinitions;
+        public IReadOnlyList<AspectAbilityDefinition> AbilityDefinitions
+        {
+            get
+            {
+                if (abilityDefinitions == null)
+                {
+                    return Array.Empty<AspectAbilityDefinition>();
+                }
+
+                if (_readOnlyAbilityDefinitions == null || _cachedAbilityDefinitionsSource != abilityDefinitions)
+                {
+                    _cachedAbilityDefinitionsSource = abilityDefinitions;
+                    _readOnlyAbilityDefinitions = abilityDefinitions.AsReadOnly();
+                }
+
+                return _readOnlyAbilityDefinitions;
+            }
+        }
         public int AbilityCount => abilityDefinitions != null ? abilityDefinitions.Count : 0;
         public FlawDefinition FlawDefinition => flawDefinition;
-        public IReadOnlyList<AspectMetadataEntry> Metadata => metadata;
+        public IReadOnlyList<AspectMetadataEntry> Metadata
+        {
+            get
+            {
+                if (metadata == null)
+                {
+                    return Array.Empty<AspectMetadataEntry>();
+                }
+
+                if (_readOnlyMetadata == null || _cachedMetadataSource != metadata)
+                {
+                    _cachedMetadataSource = metadata;
+                    _readOnlyMetadata = metadata.AsReadOnly();
+                }
+
+                return _readOnlyMetadata;
+            }
+        }
         public string CanonProvenance => canonProvenance;
 
         /// <summary>
@@ -60,6 +101,33 @@ namespace ShadowSlave.Aspects
         /// Returns whether this Aspect defines a bound Flaw.
         /// </summary>
         public bool HasFlaw() => flawDefinition != null;
+
+        /// <summary>
+        /// Evaluates whether this Aspect Definition contains two or more abilities with identical non-empty Ability IDs.
+        /// Uses exact ordinal comparison.
+        /// </summary>
+        public bool HasDuplicateAbilityIds()
+        {
+            if (abilityDefinitions == null || abilityDefinitions.Count <= 1)
+            {
+                return false;
+            }
+
+            HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < abilityDefinitions.Count; i++)
+            {
+                AspectAbilityDefinition abilityDef = abilityDefinitions[i];
+                if (abilityDef != null && !string.IsNullOrEmpty(abilityDef.AbilityId))
+                {
+                    if (!seen.Add(abilityDef.AbilityId))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// Finds a static ability definition by its unique AbilityId using exact ordinal comparison.

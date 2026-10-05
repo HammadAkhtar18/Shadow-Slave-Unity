@@ -27,7 +27,7 @@ namespace ShadowSlave.Progression
     /// and multi-core divine aspects / nightmare creatures up to Titan class (7).
     /// </summary>
     [Serializable]
-    public struct SoulCoreState : IEquatable<SoulCoreState>
+    public struct SoulCoreState : IEquatable<SoulCoreState>, ISerializationCallbackReceiver
     {
         [SerializeField]
         private int currentSoulCores;
@@ -35,8 +35,8 @@ namespace ShadowSlave.Progression
         [SerializeField]
         private int maximumSoulCores;
 
-        public int CurrentSoulCores => currentSoulCores;
-        public int MaximumSoulCores => maximumSoulCores;
+        public int CurrentSoulCores => Mathf.Clamp(currentSoulCores, 0, MaximumSoulCores);
+        public int MaximumSoulCores => Mathf.Max(1, maximumSoulCores);
 
         public SoulCoreState(int current, int max)
         {
@@ -44,30 +44,50 @@ namespace ShadowSlave.Progression
             currentSoulCores = Mathf.Clamp(current, 0, maximumSoulCores);
         }
 
+        public void OnBeforeSerialize()
+        {
+        }
+
+        public void OnAfterDeserialize()
+        {
+            Normalize();
+        }
+
+        /// <summary>
+        /// Normalizes internal state to guarantee invariants: current >= 0, maximum >= 1, current <= maximum.
+        /// </summary>
+        public void Normalize()
+        {
+            maximumSoulCores = Mathf.Max(1, maximumSoulCores);
+            currentSoulCores = Mathf.Clamp(currentSoulCores, 0, maximumSoulCores);
+        }
+
         internal SoulCoreState WithCurrent(int current)
         {
             SoulCoreState copy = this;
-            copy.currentSoulCores = current;
+            copy.maximumSoulCores = Mathf.Max(1, copy.maximumSoulCores);
+            copy.currentSoulCores = Mathf.Clamp(current, 0, copy.maximumSoulCores);
             return copy;
         }
 
         internal SoulCoreState WithMaximum(int max)
         {
             SoulCoreState copy = this;
-            copy.maximumSoulCores = max;
+            copy.maximumSoulCores = Mathf.Max(1, max);
+            copy.currentSoulCores = Mathf.Clamp(copy.currentSoulCores, 0, copy.maximumSoulCores);
             return copy;
         }
 
         /// <summary>True if entity possesses more than one active soul core (Monster class or higher).</summary>
-        public bool HasMultipleCores => currentSoulCores > 1;
+        public bool HasMultipleCores => CurrentSoulCores > 1;
 
         /// <summary>True if current soul cores have reached maximum capacity.</summary>
-        public bool IsMaxCoresReached => currentSoulCores >= maximumSoulCores;
+        public bool IsMaxCoresReached => CurrentSoulCores >= MaximumSoulCores;
 
         public bool Equals(SoulCoreState other)
         {
-            return currentSoulCores == other.currentSoulCores &&
-                   maximumSoulCores == other.maximumSoulCores;
+            return CurrentSoulCores == other.CurrentSoulCores &&
+                   MaximumSoulCores == other.MaximumSoulCores;
         }
 
         public override bool Equals(object obj)
@@ -79,7 +99,7 @@ namespace ShadowSlave.Progression
         {
             unchecked
             {
-                return (currentSoulCores * 397) ^ maximumSoulCores;
+                return (CurrentSoulCores * 397) ^ MaximumSoulCores;
             }
         }
     }

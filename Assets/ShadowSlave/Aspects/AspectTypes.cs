@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using UnityEngine;
 
 namespace ShadowSlave.Aspects
@@ -83,6 +84,7 @@ namespace ShadowSlave.Aspects
         private bool isActive;
 
         private Dictionary<string, string> dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
+        private ReadOnlyDictionary<string, string> _readOnlyDynamicProperties;
 
         /// <summary>
         /// Reference to the immutable static definition for this ability archetype.
@@ -121,8 +123,20 @@ namespace ShadowSlave.Aspects
         /// Read-only view of runtime dynamic instance properties.
         /// Direct external mutation is prevented; mutations must go through <see cref="AspectComponent.SetAbilityDynamicProperty"/>.
         /// Uses deterministic ordinal key comparison.
+        /// Backed by a ReadOnlyDictionary wrapper preventing cast recovery of mutable backing dictionary.
         /// </summary>
-        public IReadOnlyDictionary<string, string> DynamicProperties => GetOrCreateDynamicProperties();
+        public IReadOnlyDictionary<string, string> DynamicProperties
+        {
+            get
+            {
+                Dictionary<string, string> dict = GetOrCreateDynamicProperties();
+                if (_readOnlyDynamicProperties == null)
+                {
+                    _readOnlyDynamicProperties = new ReadOnlyDictionary<string, string>(dict);
+                }
+                return _readOnlyDynamicProperties;
+            }
+        }
 
         internal bool SetDynamicProperty(string key, string value)
         {

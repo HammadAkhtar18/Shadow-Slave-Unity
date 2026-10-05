@@ -13,7 +13,7 @@ namespace ShadowSlave.Progression
     /// Progression metadata stores arbitrary key-value tracking state for quest and story hooks.
     /// </summary>
     [DisallowMultipleComponent]
-    public class ProgressionComponent : MonoBehaviour
+    public class ProgressionComponent : MonoBehaviour, ISerializationCallbackReceiver
     {
         [Header("Rank")]
         [SerializeField]
@@ -26,6 +26,20 @@ namespace ShadowSlave.Progression
         [Header("Metadata")]
         [SerializeField]
         private List<ProgressionMetadataEntry> progressionMetadata = new List<ProgressionMetadataEntry>();
+
+        private void Awake()
+        {
+            soulCoreState.Normalize();
+        }
+
+        public void OnBeforeSerialize()
+        {
+        }
+
+        public void OnAfterDeserialize()
+        {
+            soulCoreState.Normalize();
+        }
 
         /// <summary>
         /// Fires when the character rank changes. Arguments are (newRank, oldRank).

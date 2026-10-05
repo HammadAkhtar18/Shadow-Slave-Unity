@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using ShadowSlave.Progression;
 using UnityEngine;
 
@@ -38,12 +39,32 @@ namespace ShadowSlave.Aspects
         [SerializeField]
         private string canonProvenance = string.Empty;
 
+        private ReadOnlyCollection<AspectMetadataEntry> _readOnlyMetadata;
+        private List<AspectMetadataEntry> _cachedMetadataSource;
+
         public string AbilityId => abilityId;
         public string DisplayName => displayName;
         public string Description => description;
         public ShadowSlaveCharacterRank RequiredCharacterRank => requiredCharacterRank;
         public float BaseEssenceCost => baseEssenceCost;
-        public IReadOnlyList<AspectMetadataEntry> Metadata => metadata;
+        public IReadOnlyList<AspectMetadataEntry> Metadata
+        {
+            get
+            {
+                if (metadata == null)
+                {
+                    return Array.Empty<AspectMetadataEntry>();
+                }
+
+                if (_readOnlyMetadata == null || _cachedMetadataSource != metadata)
+                {
+                    _cachedMetadataSource = metadata;
+                    _readOnlyMetadata = metadata.AsReadOnly();
+                }
+
+                return _readOnlyMetadata;
+            }
+        }
         public string CanonProvenance => canonProvenance;
 
         /// <summary>
