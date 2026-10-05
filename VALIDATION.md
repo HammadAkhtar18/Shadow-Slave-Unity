@@ -25,6 +25,7 @@
 11. Progression attribute lookup helper (locating AttributeComponent on owning GameObject, returning null when missing, non-mutating).
 12. Aspect Phase 1 foundation (static definitions as ScriptableObjects with read-only runtime query surface and no general-purpose mutation setters, preserving Unity serialization authoring, AspectRank independence, AspectComponent runtime binding ownership, non-mutation of static definition data, and non-mutation of Rank/Cores/Attributes).
 13. Aspect Phase 2 runtime ability instance foundation (AspectAbilityInstance runtime representation owned by AspectComponent, automatic instance instantiation and rebuild on Aspect assignment, locked/inactive initial state, safe lookup by ID, UnlockAbility state mutation and event dispatch, DeactivateAbility safe deactivation and event dispatch, replacement/clear lifecycle, non-mutation of static definitions, non-mutation of Progression and Attribute components).
+14. Aspect Phase 3 ability activation prerequisites (CanActivateAbility eligibility gate, ordinal ID validation, unlocked instance verification, non-negative finite cost validation, Character Rank prerequisite evaluation against owner's ProgressionComponent, Essence sufficiency evaluation against owner's AttributeComponent, zero-cost exemption from attribute requirement, pure query guarantee without Essence deduction or state side effects, GetAttributeComponent helper).
 
 ## What could not be validated
 

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using ShadowSlave.Attributes;
+using ShadowSlave.Progression;
 using UnityEngine;
 
 namespace ShadowSlave.Aspects
@@ -198,6 +200,72 @@ namespace ShadowSlave.Aspects
             {
                 instance.IsActive = false;
                 OnAbilityDeactivated?.Invoke(instance);
+            }
+
+            return true;
+        }
+
+        /* --- Attribute Integration --- */
+
+        /// <summary>
+        /// Safe helper to locate the owning GameObject's AttributeComponent without duplicate ownership.
+        /// Returns the AttributeComponent attached to the same GameObject, or null if missing.
+        /// Lookup only; does not cache, create, or mutate attribute state.
+        /// </summary>
+        public AttributeComponent GetAttributeComponent()
+        {
+            return GetComponent<AttributeComponent>();
+        }
+
+        /* --- Ability Activation Prerequisites --- */
+
+        /// <summary>
+        /// Evaluates whether the specified Aspect ability is currently eligible for activation.
+        /// Pure eligibility check; does not activate the ability, consume resources, or produce side effects.
+        /// Verifies valid ID, unlocked instance, valid definition, valid Essence cost, Character Rank prerequisite,
+        /// and sufficient Essence (if cost > 0).
+        /// </summary>
+        public bool CanActivateAbility(string abilityId)
+        {
+            if (string.IsNullOrEmpty(abilityId))
+            {
+                return false;
+            }
+
+            AspectAbilityInstance instance = FindAbilityInstance(abilityId);
+            if (instance == null || !instance.IsValid || !instance.IsUnlocked)
+            {
+                return false;
+            }
+
+            AspectAbilityDefinition abilityDef = instance.AbilityDefinition;
+            if (abilityDef == null)
+            {
+                return false;
+            }
+
+            float cost = abilityDef.BaseEssenceCost;
+            if (!float.IsFinite(cost) || cost < 0f)
+            {
+                return false;
+            }
+
+            if (abilityDef.HasRankRequirement())
+            {
+                ProgressionComponent progression = GetComponent<ProgressionComponent>();
+                if (progression == null || !progression.HasKnownRank() || progression.GetCharacterRank() < abilityDef.RequiredCharacterRank)
+                {
+                    return false;
+                }
+            }
+
+            if (cost > 0f)
+            {
+                AttributeComponent attributes = GetAttributeComponent();
+                if (attributes == null || attributes.CurrentEssence < cost)
+                {
+                    return false;
+                }
             }
 
             return true;

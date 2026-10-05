@@ -777,5 +777,419 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(100f, attrs.CurrentStamina, 0.001f);
             Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
         }
+
+        /* --- Phase 3: Ability Activation Prerequisites Tests --- */
+
+        [Test]
+        public void CanActivateAbility_MissingAbility_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("non_existent"));
+            Assert.IsFalse(_aspectComponent.CanActivateAbility(null));
+            Assert.IsFalse(_aspectComponent.CanActivateAbility(string.Empty));
+        }
+
+        [Test]
+        public void CanActivateAbility_LockedAbility_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            // Initially locked
+            Assert.IsFalse(_aspectComponent.IsAbilityUnlocked("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_shadow_control"));
+        }
+
+        [Test]
+        public void CanActivateAbility_UnlockedZeroCostAbility_ReturnsTrue()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition freeAbility = CreateTestAsset<AspectAbilityDefinition>();
+            freeAbility.SetAbilityId("ability_free");
+            SetField(freeAbility, "baseEssenceCost", 0f);
+            SetField(freeAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { freeAbility });
+            _aspectComponent.SetAspectDefinition(def);
+
+            _aspectComponent.UnlockAbility("ability_free");
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_free"));
+        }
+
+        [Test]
+        public void CanActivateAbility_NegativeEssenceCost_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition badAbility = CreateTestAsset<AspectAbilityDefinition>();
+            badAbility.SetAbilityId("ability_negative_cost");
+            SetField(badAbility, "baseEssenceCost", -10f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { badAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_negative_cost");
+
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_negative_cost"));
+        }
+
+        [Test]
+        public void CanActivateAbility_NonFiniteEssenceCost_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition infAbility = CreateTestAsset<AspectAbilityDefinition>();
+            infAbility.SetAbilityId("ability_infinity_cost");
+            SetField(infAbility, "baseEssenceCost", float.PositiveInfinity);
+
+            AspectAbilityDefinition nanAbility = CreateTestAsset<AspectAbilityDefinition>();
+            nanAbility.SetAbilityId("ability_nan_cost");
+            SetField(nanAbility, "baseEssenceCost", float.NaN);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { infAbility, nanAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_infinity_cost");
+            _aspectComponent.UnlockAbility("ability_nan_cost");
+
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_infinity_cost"));
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_nan_cost"));
+        }
+
+        [Test]
+        public void CanActivateAbility_RankRequirementSatisfied_ReturnsTrue()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition rankAbility = CreateTestAsset<AspectAbilityDefinition>();
+            rankAbility.SetAbilityId("ability_awakened_req");
+            SetField(rankAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Awakened);
+            SetField(rankAbility, "baseEssenceCost", 0f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { rankAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_awakened_req");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+
+            // Equal rank satisfies prerequisite
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_awakened_req"));
+
+            // Higher rank satisfies prerequisite
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Ascended);
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_awakened_req"));
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Divine);
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_awakened_req"));
+        }
+
+        [Test]
+        public void CanActivateAbility_RankRequirementNotSatisfied_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition rankAbility = CreateTestAsset<AspectAbilityDefinition>();
+            rankAbility.SetAbilityId("ability_ascended_req");
+            SetField(rankAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Ascended);
+            SetField(rankAbility, "baseEssenceCost", 0f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { rankAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_ascended_req");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+
+            // Lower rank fails prerequisite
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_ascended_req"));
+
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_ascended_req"));
+        }
+
+        [Test]
+        public void CanActivateAbility_RankRequirement_WithMissingProgression_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition rankAbility = CreateTestAsset<AspectAbilityDefinition>();
+            rankAbility.SetAbilityId("ability_awakened_req");
+            SetField(rankAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Awakened);
+            SetField(rankAbility, "baseEssenceCost", 0f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { rankAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_awakened_req");
+
+            // No ProgressionComponent on _actor
+            Assert.IsNull(_actor.GetComponent<ProgressionComponent>());
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_awakened_req"));
+        }
+
+        [Test]
+        public void CanActivateAbility_RankRequirement_WithUnknownCharacterRank_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition rankAbility = CreateTestAsset<AspectAbilityDefinition>();
+            rankAbility.SetAbilityId("ability_dormant_req");
+            SetField(rankAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Dormant);
+            SetField(rankAbility, "baseEssenceCost", 0f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { rankAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_dormant_req");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            Assert.AreEqual(ShadowSlaveCharacterRank.Unknown, prog.GetCharacterRank());
+            Assert.IsFalse(prog.HasKnownRank());
+
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_dormant_req"));
+        }
+
+        [Test]
+        public void CanActivateAbility_SufficientEssence_ReturnsTrue()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition essenceAbility = CreateTestAsset<AspectAbilityDefinition>();
+            essenceAbility.SetAbilityId("ability_essence_cost");
+            SetField(essenceAbility, "baseEssenceCost", 25f);
+            SetField(essenceAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { essenceAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_essence_cost");
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+
+            // More than sufficient
+            attrs.SetEssence(50f);
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_essence_cost"));
+
+            // Exactly equal
+            attrs.SetEssence(25f);
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_essence_cost"));
+        }
+
+        [Test]
+        public void CanActivateAbility_InsufficientEssence_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition essenceAbility = CreateTestAsset<AspectAbilityDefinition>();
+            essenceAbility.SetAbilityId("ability_essence_cost");
+            SetField(essenceAbility, "baseEssenceCost", 25f);
+            SetField(essenceAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { essenceAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_essence_cost");
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+
+            attrs.SetEssence(24.9f);
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_essence_cost"));
+
+            attrs.SetEssence(0f);
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_essence_cost"));
+        }
+
+        [Test]
+        public void CanActivateAbility_PositiveCost_WithMissingAttributes_ReturnsFalse()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition essenceAbility = CreateTestAsset<AspectAbilityDefinition>();
+            essenceAbility.SetAbilityId("ability_essence_cost");
+            SetField(essenceAbility, "baseEssenceCost", 10f);
+            SetField(essenceAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { essenceAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_essence_cost");
+
+            // No AttributeComponent on _actor
+            Assert.IsNull(_aspectComponent.GetAttributeComponent());
+            Assert.IsFalse(_aspectComponent.CanActivateAbility("ability_essence_cost"));
+        }
+
+        [Test]
+        public void CanActivateAbility_ZeroCost_DoesNotRequireAttributes()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition freeAbility = CreateTestAsset<AspectAbilityDefinition>();
+            freeAbility.SetAbilityId("ability_zero_cost");
+            SetField(freeAbility, "baseEssenceCost", 0f);
+            SetField(freeAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { freeAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_zero_cost");
+
+            // No AttributeComponent on _actor
+            Assert.IsNull(_actor.GetComponent<AttributeComponent>());
+            Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_zero_cost"));
+        }
+
+        [Test]
+        public void CanActivateAbility_DoesNotConsumeEssence()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition costAbility = CreateTestAsset<AspectAbilityDefinition>();
+            costAbility.SetAbilityId("ability_cost_check");
+            SetField(costAbility, "baseEssenceCost", 30f);
+            SetField(costAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { costAbility });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_cost_check");
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(100f);
+
+            bool canActivate = _aspectComponent.CanActivateAbility("ability_cost_check");
+            Assert.IsTrue(canActivate);
+            Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
+
+            // Repeat calls
+            _aspectComponent.CanActivateAbility("ability_cost_check");
+            _aspectComponent.CanActivateAbility("ability_cost_check");
+            Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
+        }
+
+        [Test]
+        public void CanActivateAbility_DoesNotChangeUnlockedState()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            // Locked ability
+            Assert.IsFalse(_aspectComponent.IsAbilityUnlocked("ability_shadow_control"));
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+            Assert.IsFalse(_aspectComponent.IsAbilityUnlocked("ability_shadow_control"));
+
+            // Unlocked ability
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+            Assert.IsTrue(_aspectComponent.IsAbilityUnlocked("ability_shadow_control"));
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+            Assert.IsTrue(_aspectComponent.IsAbilityUnlocked("ability_shadow_control"));
+        }
+
+        [Test]
+        public void CanActivateAbility_DoesNotChangeActiveState()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+        }
+
+        [Test]
+        public void CanActivateAbility_DoesNotModifyCharacterRank()
+        {
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Ascended);
+
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+            _aspectComponent.CanActivateAbility("ability_shadow_step");
+            Assert.AreEqual(ShadowSlaveCharacterRank.Ascended, prog.GetCharacterRank());
+        }
+
+        [Test]
+        public void CanActivateAbility_DoesNotModifySoulCores()
+        {
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetMaxSoulCores(5);
+            prog.SetSoulCoreCount(3);
+
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+            Assert.AreEqual(3, prog.GetSoulCoreCount());
+            Assert.AreEqual(5, prog.GetMaxSoulCores());
+        }
+
+        [Test]
+        public void CanActivateAbility_DoesNotModifyStaticDefinition()
+        {
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            string snapId = ability1.AbilityId;
+            string snapName = ability1.DisplayName;
+            string snapDesc = ability1.Description;
+            ShadowSlaveCharacterRank snapRank = ability1.RequiredCharacterRank;
+            float snapCost = ability1.BaseEssenceCost;
+
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+            _aspectComponent.CanActivateAbility("ability_shadow_control");
+
+            Assert.AreEqual(snapId, ability1.AbilityId);
+            Assert.AreEqual(snapName, ability1.DisplayName);
+            Assert.AreEqual(snapDesc, ability1.Description);
+            Assert.AreEqual(snapRank, ability1.RequiredCharacterRank);
+            Assert.AreEqual(snapCost, ability1.BaseEssenceCost, 0.001f);
+        }
+
+        [Test]
+        public void CanActivateAbility_RepeatedCalls_AreStableAndSideEffectFree()
+        {
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_test");
+
+            AspectAbilityDefinition ability = CreateTestAsset<AspectAbilityDefinition>();
+            ability.SetAbilityId("ability_shadow_step");
+            SetField(ability, "requiredCharacterRank", ShadowSlaveCharacterRank.Awakened);
+            SetField(ability, "baseEssenceCost", 15f);
+
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { ability });
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_step");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.IsTrue(_aspectComponent.CanActivateAbility("ability_shadow_step"));
+                Assert.AreEqual(50f, attrs.CurrentEssence, 0.001f);
+                Assert.AreEqual(ShadowSlaveCharacterRank.Awakened, prog.GetCharacterRank());
+                Assert.IsTrue(_aspectComponent.IsAbilityUnlocked("ability_shadow_step"));
+                Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_step"));
+            }
+        }
     }
 }
