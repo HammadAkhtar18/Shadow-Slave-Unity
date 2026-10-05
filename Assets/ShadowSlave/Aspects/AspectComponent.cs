@@ -369,5 +369,55 @@ namespace ShadowSlave.Aspects
                 _isProcessingAbilityTransition = false;
             }
         }
+
+        /* --- Dynamic Instance Properties --- */
+
+        /// <summary>
+        /// Sets a dynamic runtime property on an individual ability instance.
+        /// Stores data on the runtime <see cref="AspectAbilityInstance"/> without mutating the static definition.
+        /// Rejects invalid/empty abilityId or key, non-existent abilities, or invalid instances.
+        /// Uses deterministic ordinal key comparison. Null values are normalized to string.Empty matching UE5 FString semantics.
+        /// Does not trigger gameplay effects, ability activation, or resource consumption.
+        /// </summary>
+        public bool SetAbilityDynamicProperty(string abilityId, string key, string value)
+        {
+            if (string.IsNullOrEmpty(abilityId) || string.IsNullOrEmpty(key))
+            {
+                return false;
+            }
+
+            AspectAbilityInstance instance = FindAbilityInstance(abilityId);
+            if (instance == null || !instance.IsValid)
+            {
+                return false;
+            }
+
+            instance.DynamicProperties[key] = value ?? string.Empty;
+            return true;
+        }
+
+        /// <summary>
+        /// Retrieves a dynamic runtime property from an individual ability instance.
+        /// Safely initializes out value to null. Rejects invalid/empty abilityId or key,
+        /// non-existent abilities, invalid instances, or missing keys.
+        /// Pure side-effect-free query using deterministic ordinal key comparison.
+        /// </summary>
+        public bool GetAbilityDynamicProperty(string abilityId, string key, out string value)
+        {
+            value = null;
+
+            if (string.IsNullOrEmpty(abilityId) || string.IsNullOrEmpty(key))
+            {
+                return false;
+            }
+
+            AspectAbilityInstance instance = FindAbilityInstance(abilityId);
+            if (instance == null || !instance.IsValid)
+            {
+                return false;
+            }
+
+            return instance.DynamicProperties.TryGetValue(key, out value);
+        }
     }
 }

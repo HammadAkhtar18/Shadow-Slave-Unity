@@ -1922,5 +1922,441 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(snapAspectName, def.DisplayName);
             Assert.AreEqual(snapAspectRank, def.AspectRank);
         }
+
+        /* --- Phase 5: Ability Dynamic Properties Tests --- */
+
+        [Test]
+        public void SetAbilityDynamicProperty_NullOrEmptyAbilityId_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty(null, "test_key", "test_val"));
+            Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty(string.Empty, "test_key", "test_val"));
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_NullOrEmptyKey_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", null, "test_val"));
+            Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", string.Empty, "test_val"));
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_NonExistentAbility_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty("non_existent_ability", "test_key", "test_val"));
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_ValidProperty_ReturnsTrue()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            bool result = _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "mode", "stealth");
+            Assert.IsTrue(result);
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.IsNotNull(instance);
+            Assert.AreEqual(1, instance.DynamicProperties.Count);
+            Assert.AreEqual("stealth", instance.DynamicProperties["mode"]);
+        }
+
+        [Test]
+        public void GetAbilityDynamicProperty_NullOrEmptyAbilityId_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "key", "val");
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty(null, "key", out string v1));
+            Assert.IsNull(v1);
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty(string.Empty, "key", out string v2));
+            Assert.IsNull(v2);
+        }
+
+        [Test]
+        public void GetAbilityDynamicProperty_NullOrEmptyKey_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "key", "val");
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", null, out string v1));
+            Assert.IsNull(v1);
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", string.Empty, out string v2));
+            Assert.IsNull(v2);
+        }
+
+        [Test]
+        public void GetAbilityDynamicProperty_NonExistentAbility_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("non_existent_ability", "key", out string v));
+            Assert.IsNull(v);
+        }
+
+        [Test]
+        public void GetAbilityDynamicProperty_MissingKey_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "existing_key", "existing_val");
+
+            bool result = _aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "missing_key", out string v);
+            Assert.IsFalse(result);
+            Assert.IsNull(v);
+        }
+
+        [Test]
+        public void GetAbilityDynamicProperty_ReturnsStoredValue()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "target_count", "4");
+
+            bool result = _aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "target_count", out string val);
+            Assert.IsTrue(result);
+            Assert.AreEqual("4", val);
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_OverwritesExistingKey_WithoutDuplicateEntries()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            Assert.IsTrue(_aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "combo", "1"));
+            Assert.IsTrue(_aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "combo", "2"));
+
+            bool result = _aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "combo", out string val);
+            Assert.IsTrue(result);
+            Assert.AreEqual("2", val);
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.AreEqual(1, instance.DynamicProperties.Count);
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_MultipleKeysOnSameAbility_CoexistIndependently()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "prop_a", "alpha");
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "prop_b", "beta");
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "prop_a", out string valA));
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "prop_b", out string valB));
+
+            Assert.AreEqual("alpha", valA);
+            Assert.AreEqual("beta", valB);
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.AreEqual(2, instance.DynamicProperties.Count);
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_IsolatedBetweenAbilities()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "shared_name", "from_control");
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "shared_name", out string val1));
+            Assert.AreEqual("from_control", val1);
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_step", "shared_name", out string val2));
+            Assert.IsNull(val2);
+
+            AspectAbilityInstance instance2 = _aspectComponent.FindAbilityInstance("ability_shadow_step");
+            Assert.AreEqual(0, instance2.DynamicProperties.Count);
+        }
+
+        [Test]
+        public void DynamicProperties_SurviveActivationAndDeactivation()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.UnlockAbility("ability_shadow_control");
+
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Dormant);
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "stance", "shadow_blade");
+
+            // Activate ability
+            Assert.IsTrue(_aspectComponent.ActivateAbility("ability_shadow_control"));
+            Assert.IsTrue(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "stance", out string valAfterActivate));
+            Assert.AreEqual("shadow_blade", valAfterActivate);
+
+            // Deactivate ability
+            Assert.IsTrue(_aspectComponent.DeactivateAbility("ability_shadow_control"));
+            Assert.IsFalse(_aspectComponent.IsAbilityActive("ability_shadow_control"));
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "stance", out string valAfterDeactivate));
+            Assert.AreEqual("shadow_blade", valAfterDeactivate);
+        }
+
+        [Test]
+        public void DynamicProperties_DiscardedWhenAspectReplaced()
+        {
+            var (defA, _, _) = CreateTwoAbilityAspect();
+            AspectDefinition defB = CreateTestAsset<AspectDefinition>();
+            defB.SetAspectId("aspect_b");
+
+            AspectAbilityDefinition abilityB = CreateTestAsset<AspectAbilityDefinition>();
+            abilityB.SetAbilityId("ability_solar_beam");
+            SetField(defB, "abilityDefinitions", new List<AspectAbilityDefinition> { abilityB });
+
+            _aspectComponent.SetAspectDefinition(defA);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "persistent_flag", "active");
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "persistent_flag", out string _));
+
+            // Replace aspect
+            _aspectComponent.SetAspectDefinition(defB);
+
+            // Old ability instance is gone
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "persistent_flag", out string _));
+
+            // New ability instance starts clean
+            AspectAbilityInstance newInstance = _aspectComponent.FindAbilityInstance("ability_solar_beam");
+            Assert.IsNotNull(newInstance);
+            Assert.AreEqual(0, newInstance.DynamicProperties.Count);
+        }
+
+        [Test]
+        public void DynamicProperties_DiscardedWhenAspectCleared()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "temp_state", "123");
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "temp_state", out string _));
+
+            // Clear aspect
+            _aspectComponent.SetAspectDefinition(null);
+
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "temp_state", out string v));
+            Assert.IsNull(v);
+        }
+
+        [Test]
+        public void DynamicProperties_NewRuntimeInstances_StartClean()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            IReadOnlyList<AspectAbilityInstance> instances = _aspectComponent.GetAbilityInstances();
+            Assert.AreEqual(2, instances.Count);
+            for (int i = 0; i < instances.Count; i++)
+            {
+                Assert.IsNotNull(instances[i].DynamicProperties);
+                Assert.AreEqual(0, instances[i].DynamicProperties.Count);
+            }
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_DoesNotMutateStaticDefinitions()
+        {
+            var (def, ability1, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            string snapId = ability1.AbilityId;
+            string snapName = ability1.DisplayName;
+            string snapDesc = ability1.Description;
+            ShadowSlaveCharacterRank snapRank = ability1.RequiredCharacterRank;
+            float snapCost = ability1.BaseEssenceCost;
+
+            string snapAspectId = def.AspectId;
+            string snapAspectName = def.DisplayName;
+            AspectRank snapAspectRank = def.AspectRank;
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "meta1", "val1");
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "meta2", "val2");
+
+            Assert.AreEqual(snapId, ability1.AbilityId);
+            Assert.AreEqual(snapName, ability1.DisplayName);
+            Assert.AreEqual(snapDesc, ability1.Description);
+            Assert.AreEqual(snapRank, ability1.RequiredCharacterRank);
+            Assert.AreEqual(snapCost, ability1.BaseEssenceCost, 0.001f);
+
+            Assert.AreEqual(snapAspectId, def.AspectId);
+            Assert.AreEqual(snapAspectName, def.DisplayName);
+            Assert.AreEqual(snapAspectRank, def.AspectRank);
+        }
+
+        [Test]
+        public void SetAbilityDynamicProperty_DoesNotMutateProgressionOrAttributeComponents()
+        {
+            ProgressionComponent prog = _actor.AddComponent<ProgressionComponent>();
+            prog.SetCharacterRank(ShadowSlaveCharacterRank.Awakened);
+            prog.SetMaxSoulCores(7);
+            prog.SetSoulCoreCount(3);
+            prog.SetProgressionMetadata("quest_step", "five");
+
+            AttributeComponent attrs = _actor.AddComponent<AttributeComponent>();
+            attrs.InitializeAttributes(AttributeInitConfig.Default);
+            attrs.SetEssence(50f);
+            attrs.SetHealth(80f);
+            attrs.SetStamina(90f);
+
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "temp_buff", "swift");
+            _aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "temp_buff", out string _);
+
+            Assert.AreEqual(ShadowSlaveCharacterRank.Awakened, prog.GetCharacterRank());
+            Assert.AreEqual(3, prog.GetSoulCoreCount());
+            Assert.AreEqual(7, prog.GetMaxSoulCores());
+            Assert.IsTrue(prog.GetProgressionMetadata("quest_step", out string val));
+            Assert.AreEqual("five", val);
+
+            Assert.AreEqual(50f, attrs.CurrentEssence, 0.001f);
+            Assert.AreEqual(80f, attrs.CurrentHealth, 0.001f);
+            Assert.AreEqual(90f, attrs.CurrentStamina, 0.001f);
+        }
+
+        [Test]
+        public void GetAbilityDynamicProperty_GetterPurity_DoesNotMutateState()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.AreEqual(0, instance.DynamicProperties.Count);
+
+            // Repeated calls for absent property
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "absent_prop", out string v));
+                Assert.IsNull(v);
+                Assert.AreEqual(0, instance.DynamicProperties.Count);
+            }
+
+            // Set property and repeat calls for present property
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "present_prop", "constant");
+            Assert.AreEqual(1, instance.DynamicProperties.Count);
+
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "present_prop", out string v));
+                Assert.AreEqual("constant", v);
+                Assert.AreEqual(1, instance.DynamicProperties.Count);
+            }
+        }
+
+        [Test]
+        public void DynamicProperties_KeySemantics_AreOrdinalAndCaseSensitive()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "CaseKey", "Uppercase");
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "casekey", "Lowercase");
+
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "CaseKey", out string upper));
+            Assert.IsTrue(_aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "casekey", out string lower));
+
+            Assert.AreEqual("Uppercase", upper);
+            Assert.AreEqual("Lowercase", lower);
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.AreEqual(2, instance.DynamicProperties.Count);
+        }
+
+        [Test]
+        public void DynamicProperties_EmptyValue_StoredAndRetrievedSuccessfully()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            bool setResult = _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "flag", string.Empty);
+            Assert.IsTrue(setResult);
+
+            bool getResult = _aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "flag", out string val);
+            Assert.IsTrue(getResult);
+            Assert.AreEqual(string.Empty, val);
+        }
+
+        [Test]
+        public void DynamicProperties_NullValue_NormalizedToEmptyString()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            bool setResult = _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "flag_null", null);
+            Assert.IsTrue(setResult);
+
+            bool getResult = _aspectComponent.GetAbilityDynamicProperty("ability_shadow_control", "flag_null", out string val);
+            Assert.IsTrue(getResult);
+            Assert.AreEqual(string.Empty, val, "Null value must normalize to empty string matching UE5 FString semantics.");
+        }
+
+        [Test]
+        public void DynamicProperties_BelongExclusivelyToAspectAbilityInstance_NotStaticDefinitions()
+        {
+            // Verify static content definitions do not define DynamicProperties
+            Type defType = typeof(AspectDefinition);
+            Type abilityDefType = typeof(AspectAbilityDefinition);
+            Type instanceType = typeof(AspectAbilityInstance);
+
+            Assert.IsNull(defType.GetProperty("DynamicProperties"), "AspectDefinition must not possess DynamicProperties.");
+            Assert.IsNull(defType.GetField("dynamicProperties", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), "AspectDefinition must not possess dynamicProperties field.");
+
+            Assert.IsNull(abilityDefType.GetProperty("DynamicProperties"), "AspectAbilityDefinition must not possess DynamicProperties.");
+            Assert.IsNull(abilityDefType.GetField("dynamicProperties", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), "AspectAbilityDefinition must not possess dynamicProperties field.");
+
+            Assert.IsNotNull(instanceType.GetProperty("DynamicProperties"), "AspectAbilityInstance must possess DynamicProperties.");
+
+            // Verify runtime storage on instance
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+            _aspectComponent.SetAbilityDynamicProperty("ability_shadow_control", "instance_only", "verified");
+
+            AspectAbilityInstance instance = _aspectComponent.FindAbilityInstance("ability_shadow_control");
+            Assert.IsNotNull(instance);
+            Assert.IsTrue(instance.DynamicProperties.ContainsKey("instance_only"));
+            Assert.AreEqual("verified", instance.DynamicProperties["instance_only"]);
+        }
+
+        [Test]
+        public void DynamicProperties_InvalidInstance_ReturnsFalse()
+        {
+            var (def, _, _) = CreateTwoAbilityAspect();
+            _aspectComponent.SetAspectDefinition(def);
+
+            AspectAbilityInstance invalidInstance = new AspectAbilityInstance();
+            Assert.IsFalse(invalidInstance.IsValid);
+
+            // Adding invalid instance to list directly via reflection for defensive test
+            FieldInfo instancesField = typeof(AspectComponent).GetField("abilityInstances", BindingFlags.Instance | BindingFlags.NonPublic);
+            List<AspectAbilityInstance> list = (List<AspectAbilityInstance>)instancesField.GetValue(_aspectComponent);
+            list.Add(invalidInstance);
+
+            Assert.IsFalse(_aspectComponent.SetAbilityDynamicProperty(string.Empty, "key", "val"));
+            Assert.IsFalse(_aspectComponent.GetAbilityDynamicProperty(string.Empty, "key", out string _));
+        }
     }
 }

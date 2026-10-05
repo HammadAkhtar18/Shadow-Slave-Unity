@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ShadowSlave.Aspects
@@ -81,6 +82,8 @@ namespace ShadowSlave.Aspects
         [SerializeField]
         private bool isActive;
 
+        private Dictionary<string, string> dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
+
         /// <summary>
         /// Reference to the immutable static definition for this ability archetype.
         /// </summary>
@@ -114,11 +117,28 @@ namespace ShadowSlave.Aspects
         /// </summary>
         public bool IsValid => abilityDefinition != null;
 
+        /// <summary>
+        /// Dynamic instance properties for runtime state tracking without modifying static definitions.
+        /// Uses deterministic ordinal key comparison.
+        /// </summary>
+        public Dictionary<string, string> DynamicProperties
+        {
+            get
+            {
+                if (dynamicProperties == null)
+                {
+                    dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
+                }
+                return dynamicProperties;
+            }
+        }
+
         public AspectAbilityInstance()
         {
             abilityDefinition = null;
             isUnlocked = false;
             isActive = false;
+            dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
         }
 
         public AspectAbilityInstance(AspectAbilityDefinition definition, bool isUnlocked = false)
@@ -126,6 +146,7 @@ namespace ShadowSlave.Aspects
             abilityDefinition = definition;
             this.isUnlocked = isUnlocked;
             isActive = false;
+            dynamicProperties = new Dictionary<string, string>(StringComparer.Ordinal);
         }
     }
 }
