@@ -23,7 +23,7 @@
 9. ProgressionComponent stores serialized `SoulCoreState` struct directly with overflow-safe additions (`AddSoulCore` with `int.MaxValue`).
 10. Progression metadata key and value boundary validation (null/empty key rejection, null value rejection, ordinal matching, deduplication).
 11. Progression attribute lookup helper (locating AttributeComponent on owning GameObject, returning null when missing, non-mutating).
-12. Aspect Phase 1 foundation (static definitions as ScriptableObjects, AspectRank independence, AspectComponent binding, non-mutation of Rank/Cores/Attributes).
+12. Aspect Phase 1 foundation (static definitions as ScriptableObjects with read-only runtime query surface and no general-purpose mutation setters, preserving Unity serialization authoring, AspectRank independence, AspectComponent runtime binding ownership, non-mutation of static definition data, and non-mutation of Rank/Cores/Attributes).
 
 ## What could not be validated
 

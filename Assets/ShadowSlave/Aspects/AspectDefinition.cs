@@ -8,6 +8,7 @@ namespace ShadowSlave.Aspects
     /// Static content definition describing an immutable Aspect archetype in Shadow Slave.
     /// Holds verified canon classification (AspectRank), static ability definitions, and bound Flaw definition.
     /// Cleanly separates immutable static archetype data from mutable runtime character state.
+    /// Authored via Unity serialized asset workflow; read-only at runtime.
     /// </summary>
     [CreateAssetMenu(fileName = "NewAspectDefinition", menuName = "ShadowSlave/Aspects/Aspect Definition")]
     public class AspectDefinition : ScriptableObject
@@ -83,37 +84,9 @@ namespace ShadowSlave.Aspects
             return null;
         }
 
+        /// <summary>
+        /// Compatibility identity accessor matching UE5 SetAspectId.
+        /// </summary>
         public void SetAspectId(string newAspectId) => aspectId = newAspectId ?? string.Empty;
-        public void SetDisplayName(string newDisplayName) => displayName = newDisplayName ?? string.Empty;
-        public void SetDescription(string newDescription) => description = newDescription ?? string.Empty;
-        public void SetAspectRank(AspectRank rank) => aspectRank = rank;
-        public void SetFlawDefinition(FlawDefinition newFlawDef) => flawDefinition = newFlawDef;
-        public void SetCanonProvenance(string newProvenance) => canonProvenance = newProvenance ?? string.Empty;
-
-        public void SetAbilityDefinitions(IEnumerable<AspectAbilityDefinition> abilities)
-        {
-            abilityDefinitions.Clear();
-            if (abilities != null)
-            {
-                abilityDefinitions.AddRange(abilities);
-            }
-        }
-
-        public void AddAbilityDefinition(AspectAbilityDefinition ability)
-        {
-            if (ability != null && !abilityDefinitions.Contains(ability))
-            {
-                abilityDefinitions.Add(ability);
-            }
-        }
-
-        public void SetMetadata(IEnumerable<AspectMetadataEntry> entries)
-        {
-            metadata.Clear();
-            if (entries != null)
-            {
-                metadata.AddRange(entries);
-            }
-        }
     }
 }

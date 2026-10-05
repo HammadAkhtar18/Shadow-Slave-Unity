@@ -9,6 +9,7 @@ namespace ShadowSlave.Aspects
     /// Static content definition describing an immutable static Aspect Ability archetype.
     /// Holds static identity, Character Rank prerequisite, and base Essence cost parameters.
     /// Runtime activation, state, cooldowns, and essence consumption are handled in later runtime systems.
+    /// Authored via Unity serialized asset workflow; read-only at runtime.
     /// </summary>
     [CreateAssetMenu(fileName = "NewAspectAbilityDefinition", menuName = "ShadowSlave/Aspects/Aspect Ability Definition")]
     public class AspectAbilityDefinition : ScriptableObject
@@ -50,20 +51,9 @@ namespace ShadowSlave.Aspects
         /// </summary>
         public bool HasRankRequirement() => requiredCharacterRank != ShadowSlaveCharacterRank.Unknown;
 
+        /// <summary>
+        /// Compatibility identity accessor matching UE5 SetAbilityId.
+        /// </summary>
         public void SetAbilityId(string newAbilityId) => abilityId = newAbilityId ?? string.Empty;
-        public void SetDisplayName(string newDisplayName) => displayName = newDisplayName ?? string.Empty;
-        public void SetDescription(string newDescription) => description = newDescription ?? string.Empty;
-        public void SetRequiredCharacterRank(ShadowSlaveCharacterRank rank) => requiredCharacterRank = rank;
-        public void SetBaseEssenceCost(float cost) => baseEssenceCost = Mathf.Max(0f, cost);
-        public void SetCanonProvenance(string newProvenance) => canonProvenance = newProvenance ?? string.Empty;
-
-        public void SetMetadata(IEnumerable<AspectMetadataEntry> entries)
-        {
-            metadata.Clear();
-            if (entries != null)
-            {
-                metadata.AddRange(entries);
-            }
-        }
     }
 }

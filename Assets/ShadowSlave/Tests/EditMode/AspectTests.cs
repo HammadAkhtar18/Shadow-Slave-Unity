@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using ShadowSlave.Aspects;
 using ShadowSlave.Attributes;
@@ -44,6 +47,22 @@ namespace ShadowSlave.Tests.EditMode
             T asset = ScriptableObject.CreateInstance<T>();
             _createdAssets.Add(asset);
             return asset;
+        }
+
+        /// <summary>
+        /// Test helper simulating Unity deserialization/Inspector authoring for serialized backing fields.
+        /// Prevents polluting production ScriptableObject APIs with general runtime mutation setters.
+        /// </summary>
+        private static void SetField(object target, string fieldName, object value)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.IsNotNull(field, $"Serialized field '{fieldName}' was not found on type '{target.GetType().Name}'.");
+            field.SetValue(target, value);
         }
 
         /* --- Aspect Rank Tests --- */
@@ -98,6 +117,9 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(0, def.AbilityCount);
             Assert.IsNull(def.FlawDefinition);
             Assert.IsFalse(def.HasFlaw());
+            Assert.IsNotNull(def.Metadata);
+            Assert.AreEqual(0, def.Metadata.Count);
+            Assert.AreEqual(string.Empty, def.CanonProvenance);
         }
 
         [Test]
@@ -105,9 +127,9 @@ namespace ShadowSlave.Tests.EditMode
         {
             AspectDefinition def = CreateTestAsset<AspectDefinition>();
             def.SetAspectId("aspect_shadow_slave");
-            def.SetDisplayName("Shadow Slave");
-            def.SetDescription("Slave of shadows, master of nothing.");
-            def.SetAspectRank(AspectRank.Divine);
+            SetField(def, "displayName", "Shadow Slave");
+            SetField(def, "description", "Slave of shadows, master of nothing.");
+            SetField(def, "aspectRank", AspectRank.Divine);
 
             Assert.AreEqual("aspect_shadow_slave", def.AspectId);
             Assert.AreEqual("Shadow Slave", def.DisplayName);
@@ -123,17 +145,17 @@ namespace ShadowSlave.Tests.EditMode
 
             AspectAbilityDefinition ability1 = CreateTestAsset<AspectAbilityDefinition>();
             ability1.SetAbilityId("ability_shadow_control");
-            ability1.SetDisplayName("Shadow Control");
-            ability1.SetRequiredCharacterRank(ShadowSlaveCharacterRank.Dormant);
-            ability1.SetBaseEssenceCost(5f);
+            SetField(ability1, "displayName", "Shadow Control");
+            SetField(ability1, "requiredCharacterRank", ShadowSlaveCharacterRank.Dormant);
+            SetField(ability1, "baseEssenceCost", 5f);
 
             AspectAbilityDefinition ability2 = CreateTestAsset<AspectAbilityDefinition>();
             ability2.SetAbilityId("ability_shadow_step");
-            ability2.SetDisplayName("Shadow Step");
-            ability2.SetRequiredCharacterRank(ShadowSlaveCharacterRank.Awakened);
-            ability2.SetBaseEssenceCost(15f);
+            SetField(ability2, "displayName", "Shadow Step");
+            SetField(ability2, "requiredCharacterRank", ShadowSlaveCharacterRank.Awakened);
+            SetField(ability2, "baseEssenceCost", 15f);
 
-            def.SetAbilityDefinitions(new[] { ability1, ability2 });
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { ability1, ability2 });
 
             Assert.AreEqual(2, def.AbilityCount);
             Assert.AreSame(ability1, def.AbilityDefinitions[0]);
@@ -156,7 +178,7 @@ namespace ShadowSlave.Tests.EditMode
 
             AspectAbilityDefinition ability = CreateTestAsset<AspectAbilityDefinition>();
             ability.SetAbilityId("ability_shadow_manifestation");
-            def.AddAbilityDefinition(ability);
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { ability });
 
             Assert.IsNull(def.FindAbilityById("non_existent"));
             Assert.IsNull(def.FindAbilityById(null));
@@ -172,10 +194,10 @@ namespace ShadowSlave.Tests.EditMode
 
             FlawDefinition flaw = CreateTestAsset<FlawDefinition>();
             flaw.SetFlawId("flaw_clear_conscience");
-            flaw.SetDisplayName("Clear Conscience");
-            flaw.SetDescription("Cannot tell a lie.");
+            SetField(flaw, "displayName", "Clear Conscience");
+            SetField(flaw, "description", "Cannot tell a lie.");
 
-            def.SetFlawDefinition(flaw);
+            SetField(def, "flawDefinition", flaw);
 
             Assert.IsNotNull(def.FlawDefinition);
             Assert.IsTrue(def.HasFlaw());
@@ -189,10 +211,10 @@ namespace ShadowSlave.Tests.EditMode
         {
             AspectAbilityDefinition ability = CreateTestAsset<AspectAbilityDefinition>();
             ability.SetAbilityId("ability_shadow_manifestation");
-            ability.SetDisplayName("Shadow Manifestation");
-            ability.SetDescription("Solidify shadows into physical objects.");
-            ability.SetRequiredCharacterRank(ShadowSlaveCharacterRank.Ascended);
-            ability.SetBaseEssenceCost(25f);
+            SetField(ability, "displayName", "Shadow Manifestation");
+            SetField(ability, "description", "Solidify shadows into physical objects.");
+            SetField(ability, "requiredCharacterRank", ShadowSlaveCharacterRank.Ascended);
+            SetField(ability, "baseEssenceCost", 25f);
 
             Assert.AreEqual("ability_shadow_manifestation", ability.AbilityId);
             Assert.AreEqual("Shadow Manifestation", ability.DisplayName);
@@ -203,8 +225,107 @@ namespace ShadowSlave.Tests.EditMode
 
             // Unknown rank requirement means no prerequisite
             AspectAbilityDefinition innateAbility = CreateTestAsset<AspectAbilityDefinition>();
-            innateAbility.SetRequiredCharacterRank(ShadowSlaveCharacterRank.Unknown);
+            SetField(innateAbility, "requiredCharacterRank", ShadowSlaveCharacterRank.Unknown);
             Assert.IsFalse(innateAbility.HasRankRequirement());
+        }
+
+        /* --- Boundary & Static Integrity Tests --- */
+
+        [Test]
+        public void AspectComponent_Operations_DoNotMutate_StaticDefinitionData()
+        {
+            // Prepare static definition data
+            AspectDefinition def = CreateTestAsset<AspectDefinition>();
+            def.SetAspectId("aspect_shadow_slave");
+            SetField(def, "displayName", "Shadow Slave");
+            SetField(def, "description", "Slave of shadows, master of nothing.");
+            SetField(def, "aspectRank", AspectRank.Divine);
+            SetField(def, "canonProvenance", "Novel Chapter 13");
+
+            FlawDefinition flaw = CreateTestAsset<FlawDefinition>();
+            flaw.SetFlawId("flaw_clear_conscience");
+            SetField(flaw, "displayName", "Clear Conscience");
+            SetField(def, "flawDefinition", flaw);
+
+            AspectAbilityDefinition ability = CreateTestAsset<AspectAbilityDefinition>();
+            ability.SetAbilityId("ability_shadow_control");
+            SetField(ability, "displayName", "Shadow Control");
+            SetField(def, "abilityDefinitions", new List<AspectAbilityDefinition> { ability });
+
+            AspectDefinition otherDef = CreateTestAsset<AspectDefinition>();
+            otherDef.SetAspectId("aspect_other");
+            SetField(otherDef, "aspectRank", AspectRank.Awakened);
+
+            // Execute component operations
+            _aspectComponent.SetAspectDefinition(def);
+            Assert.IsTrue(_aspectComponent.HasAspect());
+            Assert.AreEqual(AspectRank.Divine, _aspectComponent.GetAspectRank());
+            Assert.AreSame(def, _aspectComponent.GetAspectDefinition());
+
+            // Rebind to other definition and clear
+            _aspectComponent.SetAspectDefinition(otherDef);
+            _aspectComponent.SetAspectDefinition(null);
+
+            // Assert that the static definition asset was not mutated in any way
+            Assert.AreEqual("aspect_shadow_slave", def.AspectId);
+            Assert.AreEqual("Shadow Slave", def.DisplayName);
+            Assert.AreEqual("Slave of shadows, master of nothing.", def.Description);
+            Assert.AreEqual(AspectRank.Divine, def.AspectRank);
+            Assert.AreEqual("Novel Chapter 13", def.CanonProvenance);
+            Assert.AreSame(flaw, def.FlawDefinition);
+            Assert.AreEqual("flaw_clear_conscience", def.FlawDefinition.FlawId);
+            Assert.AreEqual(1, def.AbilityCount);
+            Assert.AreSame(ability, def.AbilityDefinitions[0]);
+            Assert.AreEqual("ability_shadow_control", def.AbilityDefinitions[0].AbilityId);
+        }
+
+        [Test]
+        public void AspectDefinitions_DoNotExpose_UnintendedPublicSetters()
+        {
+            // Verify AspectDefinition properties are read-only
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("DisplayName")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("Description")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("AspectRank")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("AbilityDefinitions")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("FlawDefinition")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("Metadata")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectDefinition).GetProperty("CanonProvenance")?.CanWrite ?? true);
+
+            // Verify AspectAbilityDefinition properties are read-only
+            Assert.IsFalse(typeof(AspectAbilityDefinition).GetProperty("DisplayName")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectAbilityDefinition).GetProperty("Description")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectAbilityDefinition).GetProperty("RequiredCharacterRank")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectAbilityDefinition).GetProperty("BaseEssenceCost")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectAbilityDefinition).GetProperty("Metadata")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(AspectAbilityDefinition).GetProperty("CanonProvenance")?.CanWrite ?? true);
+
+            // Verify FlawDefinition properties are read-only
+            Assert.IsFalse(typeof(FlawDefinition).GetProperty("DisplayName")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(FlawDefinition).GetProperty("Description")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(FlawDefinition).GetProperty("Metadata")?.CanWrite ?? true);
+            Assert.IsFalse(typeof(FlawDefinition).GetProperty("CanonProvenance")?.CanWrite ?? true);
+
+            // Verify public "Set*" methods: only explicit UE5 identity compatibility setters are exposed
+            var aspectSetMethods = typeof(AspectDefinition)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(m => m.Name.StartsWith("Set", StringComparison.Ordinal) && !m.IsSpecialName)
+                .Select(m => m.Name)
+                .ToList();
+            CollectionAssert.AreEqual(new[] { "SetAspectId" }, aspectSetMethods);
+
+            var abilitySetMethods = typeof(AspectAbilityDefinition)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(m => m.Name.StartsWith("Set", StringComparison.Ordinal) && !m.IsSpecialName)
+                .Select(m => m.Name)
+                .ToList();
+            CollectionAssert.AreEqual(new[] { "SetAbilityId" }, abilitySetMethods);
+
+            var flawSetMethods = typeof(FlawDefinition)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(m => m.Name.StartsWith("Set", StringComparison.Ordinal) && !m.IsSpecialName)
+                .Select(m => m.Name)
+                .ToList();
+            CollectionAssert.AreEqual(new[] { "SetFlawId" }, flawSetMethods);
         }
 
         /* --- Aspect Component Tests --- */
@@ -222,7 +343,7 @@ namespace ShadowSlave.Tests.EditMode
         {
             AspectDefinition def = CreateTestAsset<AspectDefinition>();
             def.SetAspectId("aspect_shadow_slave");
-            def.SetAspectRank(AspectRank.Divine);
+            SetField(def, "aspectRank", AspectRank.Divine);
 
             int eventCount = 0;
             AspectDefinition recordedNew = null;
@@ -265,11 +386,11 @@ namespace ShadowSlave.Tests.EditMode
         {
             AspectDefinition aspectA = CreateTestAsset<AspectDefinition>();
             aspectA.SetAspectId("aspect_a");
-            aspectA.SetAspectRank(AspectRank.Awakened);
+            SetField(aspectA, "aspectRank", AspectRank.Awakened);
 
             AspectDefinition aspectB = CreateTestAsset<AspectDefinition>();
             aspectB.SetAspectId("aspect_b");
-            aspectB.SetAspectRank(AspectRank.Ascended);
+            SetField(aspectB, "aspectRank", AspectRank.Ascended);
 
             _aspectComponent.SetAspectDefinition(aspectA);
             Assert.AreEqual(AspectRank.Awakened, _aspectComponent.GetAspectRank());
@@ -299,7 +420,7 @@ namespace ShadowSlave.Tests.EditMode
         public void AspectComponent_SetAspectDefinition_SettingNull_ClearsAspect()
         {
             AspectDefinition def = CreateTestAsset<AspectDefinition>();
-            def.SetAspectRank(AspectRank.Transcendent);
+            SetField(def, "aspectRank", AspectRank.Transcendent);
             _aspectComponent.SetAspectDefinition(def);
 
             Assert.IsTrue(_aspectComponent.HasAspect());
@@ -311,7 +432,7 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(AspectRank.Unknown, _aspectComponent.GetAspectRank());
         }
 
-        /* --- Boundary Tests --- */
+        /* --- Boundary Tests with other Components --- */
 
         [Test]
         public void AspectOperations_DoNotMutate_CharacterRank()
@@ -320,7 +441,7 @@ namespace ShadowSlave.Tests.EditMode
             prog.SetCharacterRank(ShadowSlaveCharacterRank.Ascended);
 
             AspectDefinition def = CreateTestAsset<AspectDefinition>();
-            def.SetAspectRank(AspectRank.Divine);
+            SetField(def, "aspectRank", AspectRank.Divine);
 
             _aspectComponent.SetAspectDefinition(def);
 
@@ -336,7 +457,7 @@ namespace ShadowSlave.Tests.EditMode
             prog.SetSoulCoreCount(3);
 
             AspectDefinition def = CreateTestAsset<AspectDefinition>();
-            def.SetAspectRank(AspectRank.Sacred);
+            SetField(def, "aspectRank", AspectRank.Sacred);
 
             _aspectComponent.SetAspectDefinition(def);
 
@@ -355,7 +476,7 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(100f, attrs.CurrentEssence, 0.001f);
 
             AspectDefinition def = CreateTestAsset<AspectDefinition>();
-            def.SetAspectRank(AspectRank.Divine);
+            SetField(def, "aspectRank", AspectRank.Divine);
 
             _aspectComponent.SetAspectDefinition(def);
 

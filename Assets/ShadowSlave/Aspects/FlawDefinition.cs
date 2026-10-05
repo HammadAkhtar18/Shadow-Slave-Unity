@@ -7,6 +7,7 @@ namespace ShadowSlave.Aspects
     /// <summary>
     /// Static content definition describing an immutable canon or custom character Flaw.
     /// Holds static identity and provenance data only; does not implement runtime Flaw mechanics or effects.
+    /// Authored via Unity serialized asset workflow; read-only at runtime.
     /// </summary>
     [CreateAssetMenu(fileName = "NewFlawDefinition", menuName = "ShadowSlave/Aspects/Flaw Definition")]
     public class FlawDefinition : ScriptableObject
@@ -34,18 +35,9 @@ namespace ShadowSlave.Aspects
         public IReadOnlyList<AspectMetadataEntry> Metadata => metadata;
         public string CanonProvenance => canonProvenance;
 
+        /// <summary>
+        /// Compatibility identity accessor matching UE5 SetFlawId.
+        /// </summary>
         public void SetFlawId(string newFlawId) => flawId = newFlawId ?? string.Empty;
-        public void SetDisplayName(string newDisplayName) => displayName = newDisplayName ?? string.Empty;
-        public void SetDescription(string newDescription) => description = newDescription ?? string.Empty;
-        public void SetCanonProvenance(string newProvenance) => canonProvenance = newProvenance ?? string.Empty;
-
-        public void SetMetadata(IEnumerable<AspectMetadataEntry> entries)
-        {
-            metadata.Clear();
-            if (entries != null)
-            {
-                metadata.AddRange(entries);
-            }
-        }
     }
 }
