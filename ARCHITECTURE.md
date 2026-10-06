@@ -53,12 +53,12 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 |--|--|
 | **UE** | `UShadowSlaveAttributeComponent`, `FAttributeModifier`, `FAttributeInitConfig`, damage delegates |
 | **Purpose** | Health, stamina, soul essence; modifiers; stamina regen without component tick |
-| **Data** | Base maxima, regen rate/delay/interval, modifier list |
-| **Runtime** | Apply/heal/clamp; consume/restore resources; recalculate max from Flat then Percent; regen via timers |
+| **Data** | Base maxima, regen rate/delay/interval, modifier list, timed modifier tracking entries (`TimedModifierEntry`) |
+| **Runtime** | Apply/heal/clamp; consume/restore resources; recalculate max from Flat then Percent; regen via coroutines. Timed modifier lifecycle: modifier duration represents absolute game time (`ExpirationTime = now + Duration`), matching UE5 `FTimerManager` world-time semantics; disabling the component does not pause duration. Re-enabling (`OnEnable` / `ReconcileTimedModifiers`) prunes modifiers that expired while disabled and reschedules remaining duration for active ones. Ownership of expiration belongs strictly to `AttributeComponent`. A monotonic generation token prevents stale coroutines from evicting replaced or re-added modifier instances, ensuring expiration occurs exactly once. `RecalculateMaxAttributes` wraps event dispatches in isolated try-catch blocks logging via `SSLog.Error` to guarantee exception safety |
 | **Events** | Health/Stamina/Essence changed; damage/heal received; death |
 | **Dependencies** | Combat damage payload type |
 | **Unity** | `AttributeComponent`, `AttributeTypes`, `DamageInfo` |
-| **Notes** | No `Update()`; regen and modifier expiry use coroutines. Dead blocks heal/damage/consumes |
+| **Notes** | No `Update()`; regen and modifier expiry use coroutines with absolute expiration reconciliation. Dead blocks heal/damage/consumes |
 
 ### Characters
 | | |

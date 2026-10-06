@@ -1,5 +1,8 @@
 using System;
+using System.Runtime.CompilerServices;
 using UnityEngine;
+
+[assembly: InternalsVisibleTo("ShadowSlave.Tests")]
 
 namespace ShadowSlave.Attributes
 {

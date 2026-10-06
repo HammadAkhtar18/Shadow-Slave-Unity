@@ -24,8 +24,19 @@ namespace ShadowSlave.Attributes
         private float _effectiveMaxEssence = 100f;
         private bool _isDead;
 
+        private class TimedModifierEntry
+        {
+            public string ModifierId;
+            public float Duration;
+            public float ExpirationTime;
+            public int Generation;
+            public Coroutine TimerCoroutine;
+        }
+
         private readonly List<AttributeModifier> _activeModifiers = new List<AttributeModifier>();
-        private readonly Dictionary<string, Coroutine> _modifierTimers = new Dictionary<string, Coroutine>();
+        private readonly Dictionary<string, TimedModifierEntry> _timedModifiers = new Dictionary<string, TimedModifierEntry>(StringComparer.Ordinal);
+        private int _modifierGenerationCounter;
+        private Func<float> _timeProvider;
         private Coroutine _staminaRegenDelayCoroutine;
         private Coroutine _staminaRegenTickCoroutine;
 
@@ -57,6 +68,36 @@ namespace ShadowSlave.Attributes
         public IReadOnlyList<AttributeModifier> ActiveModifiers => _activeModifiers;
         public AttributeInitConfig AttributeConfig => attributeConfig;
 
+        private float GetCurrentTime()
+        {
+            if (_timeProvider != null)
+            {
+                return _timeProvider();
+            }
+
+            return Time.time;
+        }
+
+        internal void SetTimeProvider(Func<float> timeProvider)
+        {
+            _timeProvider = timeProvider;
+        }
+
+        internal float GetRemainingDuration(string modifierId)
+        {
+            if (!string.IsNullOrEmpty(modifierId) && _timedModifiers.TryGetValue(modifierId, out TimedModifierEntry entry))
+            {
+                return Mathf.Max(0f, entry.ExpirationTime - GetCurrentTime());
+            }
+
+            return 0f;
+        }
+
+        internal bool HasTimedModifier(string modifierId)
+        {
+            return !string.IsNullOrEmpty(modifierId) && _timedModifiers.ContainsKey(modifierId);
+        }
+
         private void Awake()
         {
             _effectiveMaxHealth = attributeConfig.BaseMaxHealth;
@@ -76,10 +117,27 @@ namespace ShadowSlave.Attributes
             _isDead = false;
         }
 
-        private void OnDisable()
+        internal void OnEnable()
+        {
+            ReconcileTimedModifiers();
+
+            if (attributeConfig.EnableStaminaRegen && _currentStamina < _effectiveMaxStamina && !_isDead)
+            {
+                StartStaminaRegenTick();
+            }
+        }
+
+        internal void OnDisable()
         {
             StopRegenTimers();
-            ClearModifierTimers();
+            StopModifierCoroutines();
+        }
+
+        private void OnDestroy()
+        {
+            StopRegenTimers();
+            StopModifierCoroutines();
+            _timedModifiers.Clear();
         }
 
         /* --- Health --- */
@@ -164,7 +222,7 @@ namespace ShadowSlave.Attributes
             _currentStamina -= amount;
             OnStaminaChanged?.Invoke(_currentStamina, _effectiveMaxStamina);
 
-            if (attributeConfig.EnableStaminaRegen && isActiveAndEnabled)
+            if (attributeConfig.EnableStaminaRegen && isActiveAndEnabled && Application.isPlaying)
             {
                 if (_staminaRegenTickCoroutine != null)
                 {
@@ -299,10 +357,25 @@ namespace ShadowSlave.Attributes
             RemoveModifier(modifier.ModifierId);
             _activeModifiers.Add(modifier);
 
-            if (modifier.Duration > 0f && isActiveAndEnabled)
+            if (modifier.Duration > 0f)
             {
-                Coroutine timer = StartCoroutine(ModifierExpiryRoutine(modifier.ModifierId, modifier.Duration));
-                _modifierTimers[modifier.ModifierId] = timer;
+                _modifierGenerationCounter++;
+                float now = GetCurrentTime();
+                TimedModifierEntry entry = new TimedModifierEntry
+                {
+                    ModifierId = modifier.ModifierId,
+                    Duration = modifier.Duration,
+                    ExpirationTime = now + modifier.Duration,
+                    Generation = _modifierGenerationCounter,
+                    TimerCoroutine = null
+                };
+
+                _timedModifiers[modifier.ModifierId] = entry;
+
+                if (isActiveAndEnabled && Application.isPlaying)
+                {
+                    entry.TimerCoroutine = StartCoroutine(ModifierExpiryRoutine(entry.ModifierId, entry.Generation, modifier.Duration));
+                }
             }
 
             RecalculateMaxAttributes();
@@ -315,17 +388,18 @@ namespace ShadowSlave.Attributes
                 return false;
             }
 
-            int removed = _activeModifiers.RemoveAll(m => m.ModifierId == modifierId);
-
-            if (_modifierTimers.TryGetValue(modifierId, out Coroutine timer))
+            if (_timedModifiers.TryGetValue(modifierId, out TimedModifierEntry entry))
             {
-                if (timer != null)
+                if (entry.TimerCoroutine != null)
                 {
-                    StopCoroutine(timer);
+                    StopCoroutine(entry.TimerCoroutine);
+                    entry.TimerCoroutine = null;
                 }
 
-                _modifierTimers.Remove(modifierId);
+                _timedModifiers.Remove(modifierId);
             }
+
+            int removed = _activeModifiers.RemoveAll(m => m.ModifierId == modifierId);
 
             if (removed > 0)
             {
@@ -378,7 +452,8 @@ namespace ShadowSlave.Attributes
 
         public void ClearAllModifiers()
         {
-            ClearModifierTimers();
+            StopModifierCoroutines();
+            _timedModifiers.Clear();
             _activeModifiers.Clear();
             RecalculateMaxAttributes();
         }
@@ -430,9 +505,32 @@ namespace ShadowSlave.Attributes
             _currentStamina = Mathf.Clamp(_currentStamina, 0f, _effectiveMaxStamina);
             _currentEssence = Mathf.Clamp(_currentEssence, 0f, _effectiveMaxEssence);
 
-            OnHealthChanged?.Invoke(_currentHealth, _effectiveMaxHealth);
-            OnStaminaChanged?.Invoke(_currentStamina, _effectiveMaxStamina);
-            OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+            try
+            {
+                OnHealthChanged?.Invoke(_currentHealth, _effectiveMaxHealth);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnHealthChanged subscriber during RecalculateMaxAttributes: {ex}");
+            }
+
+            try
+            {
+                OnStaminaChanged?.Invoke(_currentStamina, _effectiveMaxStamina);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnStaminaChanged subscriber during RecalculateMaxAttributes: {ex}");
+            }
+
+            try
+            {
+                OnEssenceChanged?.Invoke(_currentEssence, _effectiveMaxEssence);
+            }
+            catch (Exception ex)
+            {
+                SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnEssenceChanged subscriber during RecalculateMaxAttributes: {ex}");
+            }
         }
 
         public void LogAttributeStatus()
@@ -454,7 +552,7 @@ namespace ShadowSlave.Attributes
 
         private void StartStaminaRegenTick()
         {
-            if (_isDead || !attributeConfig.EnableStaminaRegen || !isActiveAndEnabled)
+            if (_isDead || !attributeConfig.EnableStaminaRegen || !isActiveAndEnabled || !Application.isPlaying)
             {
                 return;
             }
@@ -481,7 +579,15 @@ namespace ShadowSlave.Attributes
 
                 float step = attributeConfig.StaminaRegenRate * attributeConfig.StaminaRegenTickInterval;
                 _currentStamina = Mathf.Min(_currentStamina + step, _effectiveMaxStamina);
-                OnStaminaChanged?.Invoke(_currentStamina, _effectiveMaxStamina);
+
+                try
+                {
+                    OnStaminaChanged?.Invoke(_currentStamina, _effectiveMaxStamina);
+                }
+                catch (Exception ex)
+                {
+                    SSLog.Error(SSLog.CategoryAttributes, $"Exception in OnStaminaChanged subscriber during StaminaRegenTickRoutine: {ex}");
+                }
 
                 if (_currentStamina >= _effectiveMaxStamina)
                 {
@@ -494,11 +600,78 @@ namespace ShadowSlave.Attributes
             _staminaRegenTickCoroutine = null;
         }
 
-        private IEnumerator ModifierExpiryRoutine(string modifierId, float duration)
+        internal void ReconcileTimedModifiers()
+        {
+            if (_timedModifiers.Count == 0)
+            {
+                return;
+            }
+
+            float now = GetCurrentTime();
+            List<string> expiredIds = null;
+
+            foreach (KeyValuePair<string, TimedModifierEntry> pair in _timedModifiers)
+            {
+                TimedModifierEntry entry = pair.Value;
+                if (now >= entry.ExpirationTime)
+                {
+                    if (expiredIds == null)
+                    {
+                        expiredIds = new List<string>();
+                    }
+                    expiredIds.Add(pair.Key);
+                }
+                else
+                {
+                    if (isActiveAndEnabled && Application.isPlaying)
+                    {
+                        if (entry.TimerCoroutine != null)
+                        {
+                            StopCoroutine(entry.TimerCoroutine);
+                            entry.TimerCoroutine = null;
+                        }
+
+                        float remaining = entry.ExpirationTime - now;
+                        entry.TimerCoroutine = StartCoroutine(ModifierExpiryRoutine(entry.ModifierId, entry.Generation, remaining));
+                    }
+                }
+            }
+
+            if (expiredIds != null)
+            {
+                for (int i = 0; i < expiredIds.Count; i++)
+                {
+                    string id = expiredIds[i];
+                    _timedModifiers.Remove(id);
+                    _activeModifiers.RemoveAll(m => m.ModifierId == id);
+                }
+
+                RecalculateMaxAttributes();
+            }
+        }
+
+        internal void OnModifierExpired(string modifierId, int generation = -1)
+        {
+            if (string.IsNullOrEmpty(modifierId))
+            {
+                return;
+            }
+
+            if (_timedModifiers.TryGetValue(modifierId, out TimedModifierEntry entry))
+            {
+                if (generation != -1 && entry.Generation != generation)
+                {
+                    return;
+                }
+
+                RemoveModifier(modifierId);
+            }
+        }
+
+        private IEnumerator ModifierExpiryRoutine(string modifierId, int generation, float duration)
         {
             yield return new WaitForSeconds(duration);
-            _modifierTimers.Remove(modifierId);
-            RemoveModifier(modifierId);
+            OnModifierExpired(modifierId, generation);
         }
 
         private void StopRegenTimers()
@@ -516,17 +689,16 @@ namespace ShadowSlave.Attributes
             }
         }
 
-        private void ClearModifierTimers()
+        private void StopModifierCoroutines()
         {
-            foreach (KeyValuePair<string, Coroutine> pair in _modifierTimers)
+            foreach (KeyValuePair<string, TimedModifierEntry> pair in _timedModifiers)
             {
-                if (pair.Value != null)
+                if (pair.Value.TimerCoroutine != null)
                 {
-                    StopCoroutine(pair.Value);
+                    StopCoroutine(pair.Value.TimerCoroutine);
+                    pair.Value.TimerCoroutine = null;
                 }
             }
-
-            _modifierTimers.Clear();
         }
     }
 }
