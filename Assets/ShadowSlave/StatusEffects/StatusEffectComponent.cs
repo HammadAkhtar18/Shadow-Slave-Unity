@@ -531,20 +531,19 @@ namespace ShadowSlave.StatusEffects
                         }
                     }
                 }
+                if (expired != null && expired.Count > 0)
+                {
+                    for (int i = 0; i < expired.Count; i++)
+                    {
+                        FireExpired(expired[i]);
+                        FireRemoved(expired[i]);
+                    }
+                    FireCollectionChanged();
+                }
             }
             finally
             {
                 _isProcessingEffectTransition = false;
-            }
-
-            if (expired != null && expired.Count > 0)
-            {
-                for (int i = 0; i < expired.Count; i++)
-                {
-                    FireExpired(expired[i]);
-                    FireRemoved(expired[i]);
-                }
-                FireCollectionChanged();
             }
         }
 
@@ -573,15 +572,15 @@ namespace ShadowSlave.StatusEffects
             {
                 ClearInstanceTimer(inst);
                 _activeEffects.RemoveAt(index);
+
+                FireExpired(inst);
+                FireRemoved(inst);
+                FireCollectionChanged();
             }
             finally
             {
                 _isProcessingEffectTransition = false;
             }
-
-            FireExpired(inst);
-            FireRemoved(inst);
-            FireCollectionChanged();
         }
 
         private System.Collections.IEnumerator EffectExpiryRoutine(Guid instanceId, int generation, float duration)

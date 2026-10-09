@@ -386,6 +386,220 @@ namespace ShadowSlave.Tests.EditMode
         }
 
         [Test]
+        public void StatusEffect_ReentrancyProtection_RejectsApplyDuringExpirationCallback()
+        {
+            float currentTime = 100f;
+            _statusComp.SetTimeProvider(() => currentTime);
+
+            var def1 = StatusEffectDefinition.Create("effect_expiring", durationPolicy: StatusEffectDurationPolicy.Timed, duration: 5f);
+            var def2 = StatusEffectDefinition.Create("effect_nested", durationPolicy: StatusEffectDurationPolicy.Persistent);
+
+            Guid appliedId1 = _statusComp.ApplyEffectSimple(def1);
+            Assert.AreNotEqual(Guid.Empty, appliedId1);
+            Assert.AreEqual(1, _statusComp.EffectCount);
+
+            bool callbackFired = false;
+            Guid nestedResult = Guid.NewGuid();
+
+            _statusComp.OnStatusEffectExpired += inst =>
+            {
+                if (inst.InstanceId == appliedId1)
+                {
+                    callbackFired = true;
+                    nestedResult = _statusComp.ApplyEffectSimple(def2);
+                }
+            };
+
+            currentTime = 105f;
+            _statusComp.HandleEffectExpired(appliedId1);
+
+            Assert.IsTrue(callbackFired);
+            Assert.AreEqual(Guid.Empty, nestedResult);
+            Assert.AreEqual(0, _statusComp.EffectCount);
+            Assert.IsFalse(_statusComp.HasEffect(def1));
+            Assert.IsFalse(_statusComp.HasEffect(def2));
+
+            // Guard recovery: mutations succeed normally after transition completes
+            Guid postTransitionId = _statusComp.ApplyEffectSimple(def2);
+            Assert.AreNotEqual(Guid.Empty, postTransitionId);
+            Assert.AreEqual(1, _statusComp.EffectCount);
+            Assert.IsTrue(_statusComp.HasEffect(def2));
+        }
+
+        [Test]
+        public void StatusEffect_ReentrancyProtection_RejectsMutationDuringExpirationRemovedCallback()
+        {
+            float currentTime = 100f;
+            _statusComp.SetTimeProvider(() => currentTime);
+
+            var def1 = StatusEffectDefinition.Create("effect_expiring", durationPolicy: StatusEffectDurationPolicy.Timed, duration: 5f);
+            var def2 = StatusEffectDefinition.Create("effect_persistent", durationPolicy: StatusEffectDurationPolicy.Persistent);
+            var defNested = StatusEffectDefinition.Create("effect_nested", durationPolicy: StatusEffectDurationPolicy.Persistent);
+
+            Guid id1 = _statusComp.ApplyEffectSimple(def1);
+            Guid id2 = _statusComp.ApplyEffectSimple(def2);
+            Assert.AreEqual(2, _statusComp.EffectCount);
+
+            bool removeCallbackFired = false;
+            bool nestedRemoveResult = true;
+            Guid nestedApplyResult = Guid.NewGuid();
+
+            _statusComp.OnStatusEffectRemoved += inst =>
+            {
+                if (inst.InstanceId == id1)
+                {
+                    removeCallbackFired = true;
+                    nestedRemoveResult = _statusComp.RemoveEffect(id2);
+                    nestedApplyResult = _statusComp.ApplyEffectSimple(defNested);
+                }
+            };
+
+            currentTime = 105f;
+            _statusComp.HandleEffectExpired(id1);
+
+            Assert.IsTrue(removeCallbackFired);
+            Assert.IsFalse(nestedRemoveResult);
+            Assert.AreEqual(Guid.Empty, nestedApplyResult);
+
+            Assert.AreEqual(1, _statusComp.EffectCount);
+            Assert.IsFalse(_statusComp.HasEffect(def1));
+            Assert.IsTrue(_statusComp.HasEffect(def2));
+            Assert.IsFalse(_statusComp.HasEffect(defNested));
+
+            // Guard recovery: mutations succeed normally after transition completes
+            Assert.IsTrue(_statusComp.RemoveEffect(id2));
+            Assert.AreEqual(0, _statusComp.EffectCount);
+        }
+
+        [Test]
+        public void StatusEffect_ReentrancyProtection_ReconciliationBatchProtectsAcrossMultipleExpirations()
+        {
+            float currentTime = 100f;
+            _statusComp.SetTimeProvider(() => currentTime);
+
+            var defA = StatusEffectDefinition.Create("effect_a", durationPolicy: StatusEffectDurationPolicy.Timed, duration: 5f);
+            var defB = StatusEffectDefinition.Create("effect_b", durationPolicy: StatusEffectDurationPolicy.Timed, duration: 5f);
+            var defSurvivor = StatusEffectDefinition.Create("effect_survivor", durationPolicy: StatusEffectDurationPolicy.Timed, duration: 20f);
+            var defNested = StatusEffectDefinition.Create("effect_nested", durationPolicy: StatusEffectDurationPolicy.Persistent);
+
+            Guid idA = _statusComp.ApplyEffectSimple(defA);
+            Guid idB = _statusComp.ApplyEffectSimple(defB);
+            Guid idSurvivor = _statusComp.ApplyEffectSimple(defSurvivor);
+            Assert.AreEqual(3, _statusComp.EffectCount);
+
+            List<string> eventLog = new List<string>();
+            List<Guid> nestedApplyResults = new List<Guid>();
+            List<bool> nestedRemoveResults = new List<bool>();
+            List<int> nestedRemoveAllResults = new List<int>();
+
+            _statusComp.OnStatusEffectExpired += inst =>
+            {
+                eventLog.Add($"Expired:{inst.EffectDefinition.EffectId}");
+                nestedApplyResults.Add(_statusComp.ApplyEffectSimple(defNested));
+                nestedRemoveResults.Add(_statusComp.RemoveEffect(idSurvivor));
+            };
+
+            _statusComp.OnStatusEffectRemoved += inst =>
+            {
+                eventLog.Add($"Removed:{inst.EffectDefinition.EffectId}");
+                nestedRemoveAllResults.Add(_statusComp.RemoveAllEffects());
+            };
+
+            _statusComp.OnStatusEffectCollectionChanged += () =>
+            {
+                eventLog.Add("CollectionChanged");
+            };
+
+            currentTime = 106f;
+            _statusComp.ReconcileTimedEffects();
+
+            // Verify event ordering: both expired effects fire Expired and Removed in pairs,
+            // followed by a single CollectionChanged for the batch
+            Assert.AreEqual(5, eventLog.Count);
+            Assert.IsTrue(eventLog[0].StartsWith("Expired:"));
+            Assert.IsTrue(eventLog[1].StartsWith("Removed:"));
+            Assert.IsTrue(eventLog[2].StartsWith("Expired:"));
+            Assert.IsTrue(eventLog[3].StartsWith("Removed:"));
+            Assert.AreEqual("CollectionChanged", eventLog[4]);
+
+            // All nested mutations during the batch transition must have been rejected
+            Assert.AreEqual(2, nestedApplyResults.Count);
+            foreach (Guid res in nestedApplyResults)
+            {
+                Assert.AreEqual(Guid.Empty, res);
+            }
+
+            Assert.AreEqual(2, nestedRemoveResults.Count);
+            foreach (bool res in nestedRemoveResults)
+            {
+                Assert.IsFalse(res);
+            }
+
+            Assert.AreEqual(2, nestedRemoveAllResults.Count);
+            foreach (int res in nestedRemoveAllResults)
+            {
+                Assert.AreEqual(0, res);
+            }
+
+            // Observable state: defA and defB pruned, defSurvivor remains active, defNested was rejected
+            Assert.AreEqual(1, _statusComp.EffectCount);
+            Assert.IsFalse(_statusComp.HasEffect(defA));
+            Assert.IsFalse(_statusComp.HasEffect(defB));
+            Assert.IsTrue(_statusComp.HasEffect(defSurvivor));
+            Assert.IsFalse(_statusComp.HasEffect(defNested));
+
+            // Guard recovery: mutations succeed after reconciliation completes
+            Assert.IsTrue(_statusComp.RemoveEffect(idSurvivor));
+            Assert.AreEqual(0, _statusComp.EffectCount);
+
+            Guid postRecApply = _statusComp.ApplyEffectSimple(defNested);
+            Assert.AreNotEqual(Guid.Empty, postRecApply);
+            Assert.AreEqual(1, _statusComp.EffectCount);
+        }
+
+        [Test]
+        public void StatusEffect_ReentrancyProtection_RejectsMutationDuringManualRemoveCallback()
+        {
+            var def1 = StatusEffectDefinition.Create("effect_1");
+            var def2 = StatusEffectDefinition.Create("effect_2");
+            var def3 = StatusEffectDefinition.Create("effect_3");
+
+            Guid id1 = _statusComp.ApplyEffectSimple(def1);
+            Guid id2 = _statusComp.ApplyEffectSimple(def2);
+            Assert.AreEqual(2, _statusComp.EffectCount);
+
+            bool callbackFired = false;
+            Guid nestedApplyResult = Guid.NewGuid();
+            bool nestedRemoveResult = true;
+
+            _statusComp.OnStatusEffectRemoved += inst =>
+            {
+                if (inst.InstanceId == id1)
+                {
+                    callbackFired = true;
+                    nestedApplyResult = _statusComp.ApplyEffectSimple(def3);
+                    nestedRemoveResult = _statusComp.RemoveEffect(id2);
+                }
+            };
+
+            bool removeSuccess = _statusComp.RemoveEffect(id1);
+
+            Assert.IsTrue(removeSuccess);
+            Assert.IsTrue(callbackFired);
+            Assert.AreEqual(Guid.Empty, nestedApplyResult);
+            Assert.IsFalse(nestedRemoveResult);
+
+            Assert.AreEqual(1, _statusComp.EffectCount);
+            Assert.IsFalse(_statusComp.HasEffect(def1));
+            Assert.IsTrue(_statusComp.HasEffect(def2));
+            Assert.IsFalse(_statusComp.HasEffect(def3));
+
+            // Post-transition mutations succeed
+            Assert.IsTrue(_statusComp.RemoveEffect(id2));
+            Assert.AreEqual(0, _statusComp.EffectCount);
+        }
+
+        [Test]
         public void StatusEffect_EventSubscriberException_StateRemainsCommitted()
         {
             var def = StatusEffectDefinition.Create("effect_error");
