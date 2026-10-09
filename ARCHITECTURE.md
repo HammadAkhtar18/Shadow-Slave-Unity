@@ -70,7 +70,7 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 | **Events** | Health changed, damaged, died, gait changed |
 | **Dependencies** | Attributes, Progression; later Combat / Equipment / StatusEffects |
 | **Unity** | `CharacterBase`, `ShadowSlaveGait` |
-| **Notes** | Implements `IDamageable`. Requires `AttributeComponent` and `ProgressionComponent`. `CombatComponent` resolved when present; Equipment/StatusEffect still null stubs |
+| **Notes** | Implements `IDamageable`. Requires `AttributeComponent` and `ProgressionComponent`. `CombatComponent` and `StatusEffectComponent` resolved when present; Equipment still null stub |
 
 ### Combat
 | | |
@@ -147,9 +147,15 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 ### StatusEffects
 | | |
 |--|--|
-| **UE** | Status effect component + definitions (Abilities folder empty in UE) |
-| **Purpose** | Timed conditions and modifiers |
-| **Unity** | Folder stubs |
+| **UE** | `UShadowSlaveStatusEffectComponent`, `UShadowSlaveStatusEffectDefinition`, `FShadowSlaveStatusEffectInstance`, `FShadowSlaveStatusEffectSource`, `EStatusEffectDurationPolicy`, `EStatusEffectStackingPolicy`, `EStatusEffectPolarity` |
+| **Purpose** | Generic runtime condition and status effect foundation; manages active effects, stacking, duration, polarity, attribution, and lifecycle |
+| **Ownership** | `StatusEffectDefinition` is an immutable static archetype (`ScriptableObject`) with duration policy, duration, stacking policy, max stacks, polarity, and persistence flags. `StatusEffectComponent` owns all active runtime `StatusEffectInstance` objects on the actor. Strictly decoupled from `AttributeComponent` (does NOT duplicate attributes or calculate health/essence directly) and `CombatComponent` |
+| **Policies** | Duration policies: `Instant` (immediate notification, no persistence), `Timed` (authoritative game-time expiration), `Persistent` (persists until manually removed). Stacking policies: `IgnoreNew` (retains existing instance), `RefreshDuration` (resets duration to full), `AddStacks` (increments stacks up to `MaxStacks` and refreshes duration), `Replace` (removes old and applies new) |
+| **Runtime & Lifecycle** | Purely event-driven and timer-driven; NO `Update()` polling loops. Timed effects track authoritative `ExpirationTime` and monotonic generation tokens to prevent stale coroutine callbacks. Disabling component halts coroutines while preserving state; `OnEnable` / `ReconcileTimedEffects` prunes expired effects and reschedules active ones for exact remaining duration. Protected by reentrancy guard (`_isProcessingEffectTransition`) rejecting recursive mutations during callbacks. Exception-safe event dispatch via `SSLog.Error` |
+| **Events** | `OnStatusEffectApplied`, `OnStatusEffectRemoved`, `OnStatusEffectExpired`, `OnStatusEffectStackChanged`, `OnStatusEffectCollectionChanged` |
+| **Dependencies** | `ShadowSlave.Core` (`SSLog`); optional integration on `CharacterBase` |
+| **Unity** | `StatusEffectComponent`, `StatusEffectDefinition`, `StatusEffectTypes` (`StatusEffectInstance`, `StatusEffectSource`, policies) |
+| **Deliberate boundaries** | Generic technical foundation with zero canon mechanics (no hardcoded poison/stun/DOT/CC gameplay logic, no VFX, no UI, no global registry). Canon distinctions: conditions, enchantments, and corruptions exist in canon [CANON], but numeric duration policies and stacking rules are game-design adaptations [GAME ADAPTATION] |
 
 ### Aspects
 | | |

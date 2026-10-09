@@ -4,6 +4,7 @@ using ShadowSlave.Attributes;
 using ShadowSlave.Combat;
 using ShadowSlave.Core;
 using ShadowSlave.Progression;
+using ShadowSlave.StatusEffects;
 using UnityEngine;
 
 namespace ShadowSlave.Characters
@@ -11,7 +12,7 @@ namespace ShadowSlave.Characters
     /// <summary>
     /// Foundation character base for player, companions, and enemies.
     /// Mirrors behavioural responsibilities of UE AShadowSlaveCharacterBase without requiring
-    /// Equipment / StatusEffect components yet (null-safe stubs). Implements IDamageable; optional CombatComponent.
+    /// Equipment component yet (null-safe stub). Implements IDamageable; optional CombatComponent and StatusEffectComponent.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AttributeComponent))]
@@ -25,6 +26,7 @@ namespace ShadowSlave.Characters
         private AttributeComponent _attributeComponent;
         private ProgressionComponent _progressionComponent;
         private CombatComponent _combatComponent;
+        private StatusEffectComponent _statusEffectComponent;
         private ShadowSlaveGait _currentGait = ShadowSlaveGait.Walk;
         private bool _isAlive = true;
         private bool _canMove = true;
@@ -56,14 +58,15 @@ namespace ShadowSlave.Characters
         /// <summary>Optional future equipment component — null until Equipment is ported.</summary>
         public Component EquipmentComponent => null;
 
-        /// <summary>Optional future status-effect component — null until StatusEffects are ported.</summary>
-        public Component StatusEffectComponent => null;
+        /// <summary>Status effect component when present on the same GameObject; otherwise null.</summary>
+        public StatusEffectComponent StatusEffectComponent => _statusEffectComponent;
 
         private void Awake()
         {
             _attributeComponent = GetComponent<AttributeComponent>();
             _progressionComponent = GetComponent<ProgressionComponent>();
             _combatComponent = GetComponent<CombatComponent>();
+            _statusEffectComponent = GetComponent<StatusEffectComponent>();
             WireAttributeEvents();
         }
 
