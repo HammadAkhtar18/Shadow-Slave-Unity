@@ -25,6 +25,7 @@ namespace ShadowSlave.Equipment
         private readonly ReadOnlyDictionary<ShadowSlaveEquipmentSlot, EquippedItem> _readOnlyEquippedSlots;
 
         private bool _isProcessingEquipmentTransition;
+        private bool _hasPendingInventoryReconciliation;
 
         /* --- Delegates / Events --- */
 
@@ -200,6 +201,13 @@ namespace ShadowSlave.Equipment
                 if (!ApplyModifiersForSource(instanceId, modifiers))
                 {
                     RemoveModifiersForSource(instanceId);
+                    if (hasExistingSlot)
+                    {
+                        _equippedSlots.Remove(existingSlot);
+                        FireItemUnequipped(existingSlot, existingSlotOccupant);
+                        FireSlotChanged(existingSlot);
+                        FireEquipmentChanged();
+                    }
                     return false;
                 }
 
@@ -237,6 +245,7 @@ namespace ShadowSlave.Equipment
             finally
             {
                 _isProcessingEquipmentTransition = false;
+                ReconcilePendingInventoryIfIdle();
             }
         }
 
@@ -295,6 +304,7 @@ namespace ShadowSlave.Equipment
             finally
             {
                 _isProcessingEquipmentTransition = false;
+                ReconcilePendingInventoryIfIdle();
             }
         }
 
@@ -508,7 +518,8 @@ namespace ShadowSlave.Equipment
 
             if (_isProcessingEquipmentTransition)
             {
-                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryItemRemoved - Reentrant transition rejected.");
+                _hasPendingInventoryReconciliation = true;
+                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryItemRemoved - Reentrant transition deferred.");
                 return;
             }
 
@@ -538,7 +549,8 @@ namespace ShadowSlave.Equipment
         {
             if (_isProcessingEquipmentTransition)
             {
-                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryChanged - Reentrant transition rejected.");
+                _hasPendingInventoryReconciliation = true;
+                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryChanged - Reentrant transition deferred.");
                 return;
             }
 
@@ -570,6 +582,15 @@ namespace ShadowSlave.Equipment
                 {
                     UnequipSlot(slotsToUnequip[i]);
                 }
+            }
+        }
+
+        private void ReconcilePendingInventoryIfIdle()
+        {
+            if (!_isProcessingEquipmentTransition && _hasPendingInventoryReconciliation)
+            {
+                _hasPendingInventoryReconciliation = false;
+                HandleInventoryChanged();
             }
         }
 

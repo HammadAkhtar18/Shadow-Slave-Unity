@@ -602,5 +602,114 @@ namespace ShadowSlave.Tests.EditMode
             Assert.AreEqual(Guid.Empty, item.InstanceId);
             Assert.IsFalse(item.IsValid);
         }
+
+        [Test]
+        public void Scenario21_ReentrantInventoryRemovalDuringEquip_DefersAndReconcilesPostTransition()
+        {
+            var itemA = ItemDefinition.Create(
+                itemId: "Sword_A",
+                displayName: "Sword A",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Weapon,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Sword_A_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 20f)
+                });
+
+            var itemB = ItemDefinition.Create(
+                itemId: "Armor_B",
+                displayName: "Armor B",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Armor,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Armor_B_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 30f)
+                });
+
+            Assert.IsTrue(_inventoryComp.AddItem(itemA, 1, out _));
+            Assert.IsTrue(_inventoryComp.AddItem(itemB, 1, out _));
+            Assert.IsTrue(_inventoryComp.FindItem(itemA, out var instA));
+            Assert.IsTrue(_inventoryComp.FindItem(itemB, out var instB));
+
+            // Equip item B in Armor slot
+            Assert.IsTrue(_equipmentComp.EquipItem(instB.InstanceId));
+            Assert.IsTrue(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Armor));
+            Assert.AreEqual(130f, _attributeComp.EffectiveMaxHealth);
+
+            // Reentrant hook: when item A is equipped, remove item B from inventory
+            _equipmentComp.OnEquipmentItemEquipped += (slot, item) =>
+            {
+                if (slot == ShadowSlaveEquipmentSlot.Weapon)
+                {
+                    _inventoryComp.RemoveItemByInstanceId(instB.InstanceId, 1);
+                }
+            };
+
+            // Equip item A: triggers transition, fires OnEquipmentItemEquipped, removes item B
+            Assert.IsTrue(_equipmentComp.EquipItem(instA.InstanceId));
+
+            // Post-transition verification:
+            // 1. Item A is equipped in Weapon slot with +20 modifier
+            Assert.IsTrue(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Weapon));
+            Assert.IsTrue(_equipmentComp.IsInstanceEquipped(instA.InstanceId));
+
+            // 2. Item B was removed from inventory during the transition, so post-transition reconciliation unequipped it!
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Armor));
+            Assert.IsFalse(_equipmentComp.IsInstanceEquipped(instB.InstanceId));
+            Assert.AreEqual(1, _equipmentComp.EquippedCount);
+
+            // 3. Modifiers: 100 base + 20 (Sword A) = 120 (Armor B modifier of +30 is completely removed!)
+            Assert.AreEqual(120f, _attributeComp.EffectiveMaxHealth);
+            Assert.IsFalse(_attributeComp.HasModifierFromSourceId(instB.InstanceId));
+        }
+
+        [Test]
+        public void Scenario22_ReentrantInventoryClearDuringEquip_DefersAndReconcilesPostTransition()
+        {
+            var itemA = ItemDefinition.Create(
+                itemId: "Dagger_A",
+                displayName: "Dagger A",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Weapon,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Dagger_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 15f)
+                });
+
+            var itemB = ItemDefinition.Create(
+                itemId: "Ring_B",
+                displayName: "Ring B",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Ring,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Ring_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 25f)
+                });
+
+            Assert.IsTrue(_inventoryComp.AddItem(itemA, 1, out _));
+            Assert.IsTrue(_inventoryComp.AddItem(itemB, 1, out _));
+            Assert.IsTrue(_inventoryComp.FindItem(itemA, out var instA));
+            Assert.IsTrue(_inventoryComp.FindItem(itemB, out var instB));
+
+            Assert.IsTrue(_equipmentComp.EquipItem(instB.InstanceId));
+            Assert.AreEqual(125f, _attributeComp.EffectiveMaxHealth);
+
+            // Reentrant hook: clearing inventory during EquipItem
+            _equipmentComp.OnEquipmentItemEquipped += (slot, item) =>
+            {
+                if (slot == ShadowSlaveEquipmentSlot.Weapon)
+                {
+                    _inventoryComp.ClearInventory();
+                }
+            };
+
+            Assert.IsTrue(_equipmentComp.EquipItem(instA.InstanceId));
+
+            // Since inventory was cleared, deferred post-transition reconciliation unequipped all items!
+            Assert.AreEqual(0, _equipmentComp.EquippedCount);
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Weapon));
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Ring));
+            Assert.AreEqual(100f, _attributeComp.EffectiveMaxHealth);
+        }
     }
 }
