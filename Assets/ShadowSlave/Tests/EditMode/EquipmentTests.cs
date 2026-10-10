@@ -711,5 +711,128 @@ namespace ShadowSlave.Tests.EditMode
             Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Ring));
             Assert.AreEqual(100f, _attributeComp.EffectiveMaxHealth);
         }
+
+        [Test]
+        public void Scenario23_CascadingReentrantInventoryRemoval_DrainsViaBoundedRetryLoop()
+        {
+            var itemWeapon = ItemDefinition.Create(
+                itemId: "Sword_Casc",
+                displayName: "Sword Cascading",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Weapon,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Wpn_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 10f)
+                });
+
+            var itemArmor = ItemDefinition.Create(
+                itemId: "Armor_Casc",
+                displayName: "Armor Cascading",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Armor,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Arm_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 20f)
+                });
+
+            var itemRing = ItemDefinition.Create(
+                itemId: "Ring_Casc",
+                displayName: "Ring Cascading",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Ring,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Rng_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 30f)
+                });
+
+            Assert.IsTrue(_inventoryComp.AddItem(itemWeapon, 1, out _));
+            Assert.IsTrue(_inventoryComp.AddItem(itemArmor, 1, out _));
+            Assert.IsTrue(_inventoryComp.AddItem(itemRing, 1, out _));
+
+            Assert.IsTrue(_inventoryComp.FindItem(itemWeapon, out var instWeapon));
+            Assert.IsTrue(_inventoryComp.FindItem(itemArmor, out var instArmor));
+            Assert.IsTrue(_inventoryComp.FindItem(itemRing, out var instRing));
+
+            Assert.IsTrue(_equipmentComp.EquipItem(instWeapon.InstanceId));
+            Assert.IsTrue(_equipmentComp.EquipItem(instArmor.InstanceId));
+            Assert.IsTrue(_equipmentComp.EquipItem(instRing.InstanceId));
+            Assert.AreEqual(160f, _attributeComp.EffectiveMaxHealth);
+            Assert.AreEqual(3, _equipmentComp.EquippedCount);
+
+            // Subscriber: when Armor is unequipped during reconciliation, remove Ring from inventory
+            _equipmentComp.OnEquipmentItemUnequipped += (slot, item) =>
+            {
+                if (slot == ShadowSlaveEquipmentSlot.Armor)
+                {
+                    _inventoryComp.RemoveItemByInstanceId(instRing.InstanceId);
+                }
+            };
+
+            // Remove Armor from inventory, triggering HandleInventoryItemRemoved
+            Assert.IsTrue(_inventoryComp.RemoveItemByInstanceId(instArmor.InstanceId));
+
+            // Bounded drain loop reconciles Armor in Pass 1, then drains Ring in Pass 2!
+            Assert.AreEqual(1, _equipmentComp.EquippedCount);
+            Assert.IsTrue(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Weapon));
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Armor));
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Ring));
+
+            // Modifiers: 100 base + 10 (Sword) = 110; Armor (+20) and Ring (+30) are stripped
+            Assert.AreEqual(110f, _attributeComp.EffectiveMaxHealth);
+            Assert.IsTrue(_attributeComp.HasModifierFromSourceId(instWeapon.InstanceId));
+            Assert.IsFalse(_attributeComp.HasModifierFromSourceId(instArmor.InstanceId));
+            Assert.IsFalse(_attributeComp.HasModifierFromSourceId(instRing.InstanceId));
+        }
+
+        [Test]
+        public void Scenario24_UnequipAll_DrainsPendingInventoryReconciliationPostTransition()
+        {
+            var itemA = ItemDefinition.Create(
+                itemId: "Wpn_All",
+                displayName: "Weapon All",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Weapon,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Wpn_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 15f)
+                });
+
+            var itemB = ItemDefinition.Create(
+                itemId: "Arm_All",
+                displayName: "Armor All",
+                itemType: ShadowSlaveItemType.Equipment,
+                equipmentSlot: ShadowSlaveEquipmentSlot.Armor,
+                modifiers: new[]
+                {
+                    new AttributeModifier("Arm_Mod", AttributeType.MaxHealth, AttributeModifierType.Flat, 25f)
+                });
+
+            Assert.IsTrue(_inventoryComp.AddItem(itemA, 1, out _));
+            Assert.IsTrue(_inventoryComp.AddItem(itemB, 1, out _));
+            Assert.IsTrue(_inventoryComp.FindItem(itemA, out var instA));
+            Assert.IsTrue(_inventoryComp.FindItem(itemB, out var instB));
+
+            Assert.IsTrue(_equipmentComp.EquipItem(instA.InstanceId));
+            Assert.IsTrue(_equipmentComp.EquipItem(instB.InstanceId));
+            Assert.AreEqual(140f, _attributeComp.EffectiveMaxHealth);
+
+            // Reentrant callback: remove Item B from inventory while Item A is being unequipped
+            _equipmentComp.OnEquipmentItemUnequipped += (slot, item) =>
+            {
+                if (slot == ShadowSlaveEquipmentSlot.Weapon)
+                {
+                    _inventoryComp.RemoveItemByInstanceId(instB.InstanceId);
+                }
+            };
+
+            _equipmentComp.UnequipAll();
+
+            Assert.AreEqual(0, _equipmentComp.EquippedCount);
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Weapon));
+            Assert.IsFalse(_equipmentComp.IsSlotOccupied(ShadowSlaveEquipmentSlot.Armor));
+            Assert.AreEqual(100f, _attributeComp.EffectiveMaxHealth);
+            Assert.IsFalse(_attributeComp.HasModifierFromSourceId(instA.InstanceId));
+            Assert.IsFalse(_attributeComp.HasModifierFromSourceId(instB.InstanceId));
+        }
     }
 }

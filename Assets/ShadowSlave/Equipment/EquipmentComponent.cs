@@ -25,6 +25,7 @@ namespace ShadowSlave.Equipment
         private readonly ReadOnlyDictionary<ShadowSlaveEquipmentSlot, EquippedItem> _readOnlyEquippedSlots;
 
         private bool _isProcessingEquipmentTransition;
+        private bool _isReconcilingInventory;
         private bool _hasPendingInventoryReconciliation;
 
         /* --- Delegates / Events --- */
@@ -132,7 +133,7 @@ namespace ShadowSlave.Equipment
                 return false;
             }
 
-            if (_isProcessingEquipmentTransition)
+            if (_isProcessingEquipmentTransition || _isReconcilingInventory)
             {
                 SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.EquipItem - Reentrant transition rejected.");
                 return false;
@@ -274,12 +275,17 @@ namespace ShadowSlave.Equipment
                 return false;
             }
 
-            if (_isProcessingEquipmentTransition)
+            if (_isProcessingEquipmentTransition || _isReconcilingInventory)
             {
                 SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.UnequipSlot - Reentrant transition rejected.");
                 return false;
             }
 
+            return UnequipSlotCore(slot);
+        }
+
+        private bool UnequipSlotCore(ShadowSlaveEquipmentSlot slot)
+        {
             if (!_equippedSlots.TryGetValue(slot, out var removedItem))
             {
                 return false;
@@ -335,21 +341,28 @@ namespace ShadowSlave.Equipment
         /// </summary>
         public void UnequipAll()
         {
-            if (_equippedSlots.Count == 0)
-            {
-                return;
-            }
-
-            if (_isProcessingEquipmentTransition)
+            if (_isProcessingEquipmentTransition || _isReconcilingInventory)
             {
                 SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.UnequipAll - Reentrant transition rejected.");
                 return;
             }
 
-            var occupiedSlots = new List<ShadowSlaveEquipmentSlot>(_equippedSlots.Keys);
-            for (int i = 0; i < occupiedSlots.Count; i++)
+            if (_equippedSlots.Count == 0)
             {
-                UnequipSlot(occupiedSlots[i]);
+                return;
+            }
+
+            try
+            {
+                var occupiedSlots = new List<ShadowSlaveEquipmentSlot>(_equippedSlots.Keys);
+                for (int i = 0; i < occupiedSlots.Count; i++)
+                {
+                    UnequipSlotCore(occupiedSlots[i]);
+                }
+            }
+            finally
+            {
+                ReconcilePendingInventoryIfIdle();
             }
         }
 
@@ -516,7 +529,7 @@ namespace ShadowSlave.Equipment
                 return;
             }
 
-            if (_isProcessingEquipmentTransition)
+            if (_isProcessingEquipmentTransition || _isReconcilingInventory)
             {
                 _hasPendingInventoryReconciliation = true;
                 SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryItemRemoved - Reentrant transition deferred.");
@@ -547,50 +560,78 @@ namespace ShadowSlave.Equipment
         /// </summary>
         public void HandleInventoryChanged()
         {
-            if (_isProcessingEquipmentTransition)
+            if (_isProcessingEquipmentTransition || _isReconcilingInventory)
             {
                 _hasPendingInventoryReconciliation = true;
                 SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryChanged - Reentrant transition deferred.");
                 return;
             }
 
-            var invComp = GetInventoryComponent();
-            if (invComp == null)
-            {
-                return;
-            }
-
-            List<ShadowSlaveEquipmentSlot> slotsToUnequip = null;
-            foreach (var pair in _equippedSlots)
-            {
-                if (pair.Value.SourceType == EquipmentSourceType.Item)
-                {
-                    if (!invComp.HasItemByInstanceId(pair.Value.InstanceId))
-                    {
-                        if (slotsToUnequip == null)
-                        {
-                            slotsToUnequip = new List<ShadowSlaveEquipmentSlot>();
-                        }
-                        slotsToUnequip.Add(pair.Key);
-                    }
-                }
-            }
-
-            if (slotsToUnequip != null)
-            {
-                for (int i = 0; i < slotsToUnequip.Count; i++)
-                {
-                    UnequipSlot(slotsToUnequip[i]);
-                }
-            }
+            _hasPendingInventoryReconciliation = true;
+            ReconcilePendingInventoryIfIdle();
         }
 
         private void ReconcilePendingInventoryIfIdle()
         {
-            if (!_isProcessingEquipmentTransition && _hasPendingInventoryReconciliation)
+            if (_isProcessingEquipmentTransition || _isReconcilingInventory)
             {
+                return;
+            }
+
+            const int MaxDrainPasses = 10;
+            int drainPass = 0;
+
+            while (_hasPendingInventoryReconciliation && drainPass < MaxDrainPasses)
+            {
+                drainPass++;
                 _hasPendingInventoryReconciliation = false;
-                HandleInventoryChanged();
+                PerformInventoryReconciliation();
+            }
+
+            if (_hasPendingInventoryReconciliation)
+            {
+                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.ReconcilePendingInventoryIfIdle - Reached max drain passes; reconciliation halted to prevent infinite cycle.");
+            }
+        }
+
+        private void PerformInventoryReconciliation()
+        {
+            _isReconcilingInventory = true;
+            try
+            {
+                var invComp = GetInventoryComponent();
+                if (invComp == null)
+                {
+                    return;
+                }
+
+                List<ShadowSlaveEquipmentSlot> slotsToUnequip = null;
+                foreach (var pair in _equippedSlots)
+                {
+                    if (pair.Value.SourceType == EquipmentSourceType.Item)
+                    {
+                        if (!invComp.HasItemByInstanceId(pair.Value.InstanceId))
+                        {
+                            if (slotsToUnequip == null)
+                            {
+                                slotsToUnequip = new List<ShadowSlaveEquipmentSlot>();
+                            }
+                            slotsToUnequip.Add(pair.Key);
+                        }
+                    }
+                }
+
+                if (slotsToUnequip != null)
+                {
+                    for (int i = 0; i < slotsToUnequip.Count; i++)
+                    {
+                        UnequipSlotCore(slotsToUnequip[i]);
+                    }
+                }
+            }
+            finally
+            {
+                _isReconcilingInventory = false;
             }
         }
 
