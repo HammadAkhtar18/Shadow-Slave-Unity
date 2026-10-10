@@ -135,9 +135,16 @@ namespace ShadowSlave.Items
             {
                 for (int i = 0; i < grantedModifiers.Count; i++)
                 {
-                    if (float.IsNaN(grantedModifiers[i].Value) || float.IsInfinity(grantedModifiers[i].Value))
+                    var mod = grantedModifiers[i];
+                    if (float.IsNaN(mod.Value) || float.IsInfinity(mod.Value))
                     {
                         errorMessage = $"Item definition '{itemId}' has modifier with NaN or Infinity value at index {i}.";
+                        return false;
+                    }
+
+                    if (float.IsNaN(mod.Duration) || float.IsInfinity(mod.Duration) || mod.Duration < 0f)
+                    {
+                        errorMessage = $"Item definition '{itemId}' has modifier with invalid Duration at index {i}.";
                         return false;
                     }
                 }

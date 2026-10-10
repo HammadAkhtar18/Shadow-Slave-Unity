@@ -577,5 +577,30 @@ namespace ShadowSlave.Tests.EditMode
             // Modifiers must not duplicate: 100 + 10 = 110f
             Assert.AreEqual(110f, _attributeComp.EffectiveMaxHealth);
         }
+
+        [Test]
+        public void Scenario20_EquippedItemSerialization_PreservesGuidAndHandlesInvalidStrings()
+        {
+            var validGuid = Guid.NewGuid();
+            var item = new EquippedItem(ShadowSlaveEquipmentSlot.Weapon, EquipmentSourceType.Item, validGuid, "TestDef");
+
+            item.OnBeforeSerialize();
+            Assert.AreEqual(validGuid, item.InstanceId);
+            Assert.IsTrue(item.IsValid);
+
+            // Test OnAfterDeserialize roundtrip
+            item.OnAfterDeserialize();
+            Assert.AreEqual(validGuid, item.InstanceId);
+            Assert.IsTrue(item.IsValid);
+
+            // Test Reset and OnBeforeSerialize clears string
+            item.Reset();
+            Assert.AreEqual(Guid.Empty, item.InstanceId);
+            Assert.IsFalse(item.IsValid);
+            item.OnBeforeSerialize();
+            item.OnAfterDeserialize();
+            Assert.AreEqual(Guid.Empty, item.InstanceId);
+            Assert.IsFalse(item.IsValid);
+        }
     }
 }

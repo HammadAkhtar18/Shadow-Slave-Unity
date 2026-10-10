@@ -506,6 +506,12 @@ namespace ShadowSlave.Equipment
                 return;
             }
 
+            if (_isProcessingEquipmentTransition)
+            {
+                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryItemRemoved - Reentrant transition rejected.");
+                return;
+            }
+
             if (IsInstanceEquipped(itemInstance.InstanceId))
             {
                 // Check if the item stack was fully depleted or remains in inventory
@@ -530,6 +536,12 @@ namespace ShadowSlave.Equipment
         /// </summary>
         public void HandleInventoryChanged()
         {
+            if (_isProcessingEquipmentTransition)
+            {
+                SSLog.Warning(SSLog.CategoryEquipment, "EquipmentComponent.HandleInventoryChanged - Reentrant transition rejected.");
+                return;
+            }
+
             var invComp = GetInventoryComponent();
             if (invComp == null)
             {

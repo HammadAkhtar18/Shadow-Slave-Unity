@@ -48,7 +48,17 @@ namespace ShadowSlave.Equipment
         public EquipmentSourceType SourceType => sourceType;
 
         /// <summary>Unique stable instance GUID of the equipped item or Memory.</summary>
-        public Guid InstanceId => _cachedGuid;
+        public Guid InstanceId
+        {
+            get
+            {
+                if (_cachedGuid == Guid.Empty && !string.IsNullOrEmpty(instanceIdString) && Guid.TryParse(instanceIdString, out var parsed))
+                {
+                    _cachedGuid = parsed;
+                }
+                return _cachedGuid;
+            }
+        }
 
         /// <summary>Definition ID or asset name for debugging / inspection.</summary>
         public string DefinitionId => definitionId ?? string.Empty;
@@ -56,7 +66,7 @@ namespace ShadowSlave.Equipment
         /// <summary>True if this descriptor references a valid occupied slot, source, and instance GUID.</summary>
         public bool IsValid => slot != ShadowSlaveEquipmentSlot.None &&
                                sourceType != EquipmentSourceType.None &&
-                               _cachedGuid != Guid.Empty;
+                               InstanceId != Guid.Empty;
 
         public EquippedItem(
             ShadowSlaveEquipmentSlot slot,
@@ -85,10 +95,7 @@ namespace ShadowSlave.Equipment
 
         public void OnBeforeSerialize()
         {
-            if (_cachedGuid != Guid.Empty)
-            {
-                instanceIdString = _cachedGuid.ToString();
-            }
+            instanceIdString = _cachedGuid != Guid.Empty ? _cachedGuid.ToString() : string.Empty;
         }
 
         public void OnAfterDeserialize()
