@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ShadowSlave.Attributes;
 using ShadowSlave.Combat;
 using ShadowSlave.Core;
+using ShadowSlave.Items;
 using ShadowSlave.Progression;
 using ShadowSlave.StatusEffects;
 using UnityEngine;
@@ -12,7 +13,7 @@ namespace ShadowSlave.Characters
     /// <summary>
     /// Foundation character base for player, companions, and enemies.
     /// Mirrors behavioural responsibilities of UE AShadowSlaveCharacterBase without requiring
-    /// Equipment component yet (null-safe stub). Implements IDamageable; optional CombatComponent and StatusEffectComponent.
+    /// Equipment component yet (null-safe stub). Implements IDamageable; optional CombatComponent, StatusEffectComponent, and InventoryComponent.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AttributeComponent))]
@@ -27,6 +28,7 @@ namespace ShadowSlave.Characters
         private ProgressionComponent _progressionComponent;
         private CombatComponent _combatComponent;
         private StatusEffectComponent _statusEffectComponent;
+        private InventoryComponent _inventoryComponent;
         private ShadowSlaveGait _currentGait = ShadowSlaveGait.Walk;
         private bool _isAlive = true;
         private bool _canMove = true;
@@ -61,12 +63,16 @@ namespace ShadowSlave.Characters
         /// <summary>Status effect component when present on the same GameObject; otherwise null.</summary>
         public StatusEffectComponent StatusEffectComponent => _statusEffectComponent;
 
+        /// <summary>Inventory component when present on the same GameObject; otherwise null.</summary>
+        public InventoryComponent InventoryComponent => _inventoryComponent;
+
         private void Awake()
         {
             _attributeComponent = GetComponent<AttributeComponent>();
             _progressionComponent = GetComponent<ProgressionComponent>();
             _combatComponent = GetComponent<CombatComponent>();
             _statusEffectComponent = GetComponent<StatusEffectComponent>();
+            _inventoryComponent = GetComponent<InventoryComponent>();
             WireAttributeEvents();
         }
 

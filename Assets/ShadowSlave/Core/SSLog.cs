@@ -13,6 +13,7 @@ namespace ShadowSlave.Core
         public const string CategoryCombat = "ShadowSlave.Combat";
         public const string CategoryAspects = "ShadowSlave.Aspects";
         public const string CategoryStatusEffects = "ShadowSlave.StatusEffects";
+        public const string CategoryItems = "ShadowSlave.Items";
 
         public static void Log(string category, string message)
         {
@@ -34,5 +35,6 @@ namespace ShadowSlave.Core
         public static void LogCombat(string message) => Log(CategoryCombat, message);
         public static void LogAspects(string message) => Log(CategoryAspects, message);
         public static void LogStatusEffects(string message) => Log(CategoryStatusEffects, message);
+        public static void LogItems(string message) => Log(CategoryItems, message);
     }
 }
