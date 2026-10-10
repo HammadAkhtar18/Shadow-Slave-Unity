@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ShadowSlave.Attributes;
 using ShadowSlave.Combat;
 using ShadowSlave.Core;
+using ShadowSlave.Equipment;
 using ShadowSlave.Items;
 using ShadowSlave.Progression;
 using ShadowSlave.StatusEffects;
@@ -29,6 +30,7 @@ namespace ShadowSlave.Characters
         private CombatComponent _combatComponent;
         private StatusEffectComponent _statusEffectComponent;
         private InventoryComponent _inventoryComponent;
+        private EquipmentComponent _equipmentComponent;
         private ShadowSlaveGait _currentGait = ShadowSlaveGait.Walk;
         private bool _isAlive = true;
         private bool _canMove = true;
@@ -57,8 +59,8 @@ namespace ShadowSlave.Characters
         /// <summary>Combat component when present on the same GameObject; otherwise null.</summary>
         public CombatComponent CombatComponent => _combatComponent;
 
-        /// <summary>Optional future equipment component — null until Equipment is ported.</summary>
-        public Component EquipmentComponent => null;
+        /// <summary>Optional equipment component when present on the same GameObject; otherwise null.</summary>
+        public EquipmentComponent EquipmentComponent => _equipmentComponent;
 
         /// <summary>Status effect component when present on the same GameObject; otherwise null.</summary>
         public StatusEffectComponent StatusEffectComponent => _statusEffectComponent;
@@ -73,6 +75,7 @@ namespace ShadowSlave.Characters
             _combatComponent = GetComponent<CombatComponent>();
             _statusEffectComponent = GetComponent<StatusEffectComponent>();
             _inventoryComponent = GetComponent<InventoryComponent>();
+            _equipmentComponent = GetComponent<EquipmentComponent>();
             WireAttributeEvents();
         }
 

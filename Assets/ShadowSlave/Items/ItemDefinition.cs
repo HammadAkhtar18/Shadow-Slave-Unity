@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using ShadowSlave.Attributes;
 using UnityEngine;
 
 namespace ShadowSlave.Items
@@ -32,6 +34,13 @@ namespace ShadowSlave.Items
         [SerializeField]
         private ShadowSlaveEquipmentSlot equipmentSlot = ShadowSlaveEquipmentSlot.None;
 
+        [Header("Equipment & Modifiers")]
+        [SerializeField]
+        private List<AttributeModifier> grantedModifiers = new List<AttributeModifier>();
+
+        private ReadOnlyCollection<AttributeModifier> _readOnlyGrantedModifiers;
+        private List<AttributeModifier> _cachedGrantedModifiersSource;
+
         [Header("Stacking & Metrics")]
         [SerializeField]
         private bool isStackable = false;
@@ -55,6 +64,25 @@ namespace ShadowSlave.Items
         public int MaxStackSize => Mathf.Max(1, maxStackSize);
         public float Weight => weight;
         public int BaseValue => baseValue;
+
+        public IReadOnlyList<AttributeModifier> GrantedModifiers
+        {
+            get
+            {
+                if (grantedModifiers == null)
+                {
+                    return Array.Empty<AttributeModifier>();
+                }
+
+                if (_readOnlyGrantedModifiers == null || _cachedGrantedModifiersSource != grantedModifiers)
+                {
+                    _cachedGrantedModifiersSource = grantedModifiers;
+                    _readOnlyGrantedModifiers = grantedModifiers.AsReadOnly();
+                }
+
+                return _readOnlyGrantedModifiers;
+            }
+        }
 
         /* --- Compatibility Accessors --- */
 
@@ -103,6 +131,18 @@ namespace ShadowSlave.Items
                 return false;
             }
 
+            if (grantedModifiers != null)
+            {
+                for (int i = 0; i < grantedModifiers.Count; i++)
+                {
+                    if (float.IsNaN(grantedModifiers[i].Value) || float.IsInfinity(grantedModifiers[i].Value))
+                    {
+                        errorMessage = $"Item definition '{itemId}' has modifier with NaN or Infinity value at index {i}.";
+                        return false;
+                    }
+                }
+            }
+
             errorMessage = null;
             return true;
         }
@@ -124,7 +164,8 @@ namespace ShadowSlave.Items
             bool isStackable = false,
             int maxStackSize = 1,
             float weight = 0.1f,
-            int baseValue = 10)
+            int baseValue = 10,
+            IEnumerable<AttributeModifier> modifiers = null)
         {
             var def = CreateInstance<ItemDefinition>();
             def.itemId = itemId ?? string.Empty;
@@ -137,6 +178,11 @@ namespace ShadowSlave.Items
             def.maxStackSize = maxStackSize;
             def.weight = weight;
             def.baseValue = baseValue;
+
+            if (modifiers != null)
+            {
+                def.grantedModifiers.AddRange(modifiers);
+            }
 
             return def;
         }

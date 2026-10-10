@@ -148,9 +148,23 @@ This is not a line-by-line C++ → C# transliteration. UE types map to idiomatic
 | **Safety & Reentrancy** | Transition guard `_isProcessingInventoryTransition` protects against recursive mutations during all state transitions and event callbacks (`OnItemAdded`, `OnItemRemoved`, `OnInventoryChanged`) with `try-finally` safety. Delegate broadcasts wrap in `try-catch` logging to `SSLog.Error(SSLog.CategoryItems, ...)` so subscriber exceptions cannot abort state commit or caller execution |
 | **Queries & Persistence** | Query APIs: `HasItem`, `FindItem`, `FindItemByInstanceId`, `HasItemByInstanceId`, `GetTotalItemCount`, `GetItemsByType`, `IsFull`, `UsedSlotCount`, `FreeSlotCount`. Persistence restoration API: `RestoreInventory` replaces slots directly without triggering gameplay acquisition rules |
 | **CharacterBase Integration** | Optional `InventoryComponent` property on `CharacterBase` resolved via `GetComponent<InventoryComponent>()` in `Awake()`; null-safe if omitted |
-| **Dependencies** | `ShadowSlave.Core` (`SSLog`). Strictly decoupled from `Attributes` and deferred `Equipment`. Same `ShadowSlave.Runtime` asmdef |
+| **Dependencies** | `ShadowSlave.Core` (`SSLog`). Same `ShadowSlave.Runtime` asmdef |
 | **Unity** | `ShadowSlaveItemType`, `ShadowSlaveEquipmentSlot`, `ItemInstance`, `ItemDefinition`, `InventoryComponent` |
-| **Deferred Systems** | Equipment equipping/slots and granted attribute modifier application, Memories, Echoes, loot drops, crafting, shops, UI, save/load, and gameplay-specific effects deferred to subsequent phases |
+| **Deferred Systems** | Memories, Echoes, loot drops, crafting, shops, UI, save/load, and gameplay-specific effects deferred to subsequent phases |
+
+### Equipment
+| | |
+|--|--|
+| **UE** | `UShadowSlaveEquipmentComponent`, `EShadowSlaveEquipmentSourceType`, `FShadowSlaveEquippedItem`, `FOnEquipmentItemEquippedSignature`, `FOnEquipmentItemUnequippedSignature`, `FOnEquipmentSlotChangedSignature`, `FOnEquipmentChangedSignature` |
+| **Purpose** | Reusable actor component managing equipped items and Memories across equipment slots; coordinates between `InventoryComponent`, `AttributeComponent`, and future `MemoryComponent` purely event-driven without tick overhead |
+| **Ownership** | `EquipmentComponent` owns equipped-slot runtime assignments (`_equippedSlots` mapped from `ShadowSlaveEquipmentSlot` to `EquippedItem`, exposed as `IReadOnlyDictionary<ShadowSlaveEquipmentSlot, EquippedItem>` backed by `ReadOnlyDictionary` to prevent downcast mutations). `InventoryComponent` remains authoritative for item ownership, quantities, and lifetime. `AttributeComponent` remains authoritative for attribute calculations and modifier lifecycle. `EquippedItem` is a lightweight descriptor referencing authoritative instance GUID, slot, source type, and definition ID without duplicating mutable state |
+| **Modifier Lifecycle & Isolation** | Equipment-granted modifiers from `ItemDefinition.GrantedModifiers` are applied via `ApplyModifiersForSource` with generated composite IDs (`$"{baseName}_{sourceId:N}_{index}"`) and `SourceId = sourceId`. Modifiers are removed via `AttributeComponent.RemoveModifiersFromSourceId`, guaranteeing strict source isolation so modifiers belonging to Aspects, Status Effects, or other equipment instances are untouched. Modifier application is atomic: failure rolls back applied modifiers and leaves slot occupant unchanged |
+| **Inventory Lifecycle Integration** | Subscribes dynamically to `InventoryComponent.OnItemRemoved` and `InventoryComponent.OnInventoryChanged`. When an equipped item instance is depleted from inventory or the inventory is cleared, `EquipmentComponent` automatically unequips the affected slot and strips its modifiers. Partial stack removal is explicitly handled: if remaining stack `Quantity > 0`, the item remains equipped |
+| **Safety & Reentrancy** | Reentrancy guard `_isProcessingEquipmentTransition` protects all equip and unequip state transitions and event dispatches (`OnEquipmentItemEquipped`, `OnEquipmentItemUnequipped`, `OnEquipmentSlotChanged`, `OnEquipmentChanged`) with `try-finally` safety. Delegate invocations are wrapped in `try-catch` logging to `SSLog.Error(SSLog.CategoryEquipment, ...)` so subscriber exceptions cannot corrupt internal state or abort caller execution |
+| **CharacterBase Integration** | Optional `EquipmentComponent` property on `CharacterBase` resolved via `GetComponent<EquipmentComponent>()` in `Awake()`; null-safe if omitted |
+| **Dependencies** | `ShadowSlave.Core` (`SSLog`), `ShadowSlave.Items`, `ShadowSlave.Attributes`. Same `ShadowSlave.Runtime` asmdef |
+| **Unity** | `EquipmentSourceType`, `EquippedItem`, `EquipmentComponent`, `EquipmentTests` |
+| **Deliberate boundaries & Deferred Systems** | Memory integration (`EquipmentSourceType.Memory`), MemoryComponent integration, Echoes, equipment UI, durability/repair systems, crafting, shops, loot drops, save/load serialization, and novel-specific equipment assets are deferred to subsequent phases |
 
 ### StatusEffects
 | | |
